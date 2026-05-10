@@ -1,0 +1,35 @@
+---
+title: "RAG Chatbot with Generative AI and Prompt Injection Protection"
+summary: "Context-aware RAG system with embeddings, contextual memory, and prompt injection defenses. Live demo available."
+date: 2026-02-01
+featured: true
+order: 3
+tags: ["Python", "LLMs", "RAG", "Embeddings", "FAISS", "Gradio"]
+liveDemoUrl: "https://huggingface.co/spaces/gonzalonao/portfolio-rag"
+status: "completed"
+---
+
+## Overview
+
+A retrieval-augmented generation (RAG) chatbot that grounds an LLM's answers in a curated corpus, with a memory layer for multi-turn context and a defense layer against prompt injection. The system is built to drop into different business domains by swapping the corpus and a small handful of configuration parameters.
+
+> **Try it live:** [huggingface.co/spaces/gonzalonao/portfolio-rag](https://huggingface.co/spaces/gonzalonao/portfolio-rag)
+
+## RAG with Generative AI
+
+Documents are chunked, embedded, and indexed in a vector store. At query time, the user's message is embedded, the top-k most similar chunks are retrieved, and the LLM is given a structured prompt containing the question, the retrieved context, and the conversation history.
+
+## Contextual Memory
+
+Conversation memory is summarized incrementally rather than appended verbatim — older turns are compressed into a running summary that travels with each new query, keeping the prompt within budget while preserving long-range context.
+
+## Prompt Injection Protection
+
+Several layered defenses:
+- **Input sanitization** strips known injection patterns before the message reaches the model.
+- **Role separation** in the prompt template prevents user content from being parsed as system instructions.
+- **Output validation** rejects responses that attempt to leak system prompts or exfiltrate the corpus structure.
+
+## Dynamic Adaptation
+
+The same engine ships across business environments by swapping (a) the corpus, (b) a domain-specific system prompt, and (c) the embedding model when needed. No model retraining is required.

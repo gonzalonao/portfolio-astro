@@ -1,0 +1,56 @@
+---
+title: "Predicting Cascading Delays in US Air Traffic with Spatio-Temporal GNNs"
+subtitle: "Master's Thesis — ESESA"
+summary: "A spatio-temporal graph neural network that predicts how flight delays cascade through the US airport network, trained on 70M+ flight records."
+date: 2026-04-01
+featured: true
+order: 1
+tags: ["PyTorch", "PyTorch Geometric", "GNN", "GAT", "LSTM", "Python"]
+githubUrl: "https://github.com/gonzalonao/flight-delay-propagation/tree/feature/project-reset"
+liveDemoUrl: "https://portfolio-gnn-demo.streamlit.app"
+status: "in-progress"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## The Problem
+
+Airline delays cascade across the US air network. Predicting which airports will be affected, and when, is a graph problem with both spatial (route topology) and temporal (time-of-day, weather) structure. A delay at a single hub on a Monday morning can ripple through dozens of downstream airports over the next 12 hours — and traditional time-series models miss the topology that drives the propagation.
+
+## The Approach
+
+Modeled the US airport network as a directed graph (nodes = airports, edges = flight routes). Progressively built models from dense networks and LSTMs, through Graph Convolutional Networks (GCN) and Graph Attention Networks (GAT), culminating in a Spatio-Temporal GNN combining GNN layers with LSTM to capture both structural and temporal dependencies.
+
+<Mermaid code={`flowchart LR
+  A[Raw flights<br/>2018-2022] --> B[Preprocessing]
+  B --> C[Graph builder<br/>nodes = airports]
+  C --> D[Node features<br/>weather, traffic, time]
+  D --> E[Spatio-Temporal<br/>GNN + LSTM]
+  E --> F[Multi-horizon<br/>delay forecast]`} />
+
+The Graph Attention layer computes the attention coefficient between airport $i$ and neighbor $j$ as:
+
+$$\alpha_{ij} = \frac{\exp(\text{LeakyReLU}(\vec{a}^T [\mathbf{W}\vec{h}_i \,\|\, \mathbf{W}\vec{h}_j]))}{\sum_{k \in \mathcal{N}_i} \exp(\text{LeakyReLU}(\vec{a}^T [\mathbf{W}\vec{h}_i \,\|\, \mathbf{W}\vec{h}_k]))}$$
+
+This learned weighting lets the model focus on the most predictive upstream airports rather than treating all neighbors equally — critical when a single hub disproportionately drives delay propagation.
+
+## The Pipeline
+
+Processed Kaggle's 2018–2022 US flight delay dataset (~70M records) through a modular pipeline: preprocessing, multi-horizon training, model evaluation. Reproducible setup with YAML hyperparameter management and unit tests.
+
+- **Preprocessing**: temporal alignment, missing-value imputation, feature scaling, train/val/test splits by date.
+- **Graph construction**: directed routes, edge features (historical traffic), node features (rolling weather + delay statistics).
+- **Training**: multi-horizon (1h, 3h, 6h, 12h) regression on per-airport mean delay, with masked loss for low-traffic airports.
+- **Evaluation**: MAE/RMSE per horizon, plus a "cascade fidelity" metric measuring topological agreement with ground-truth delay spread.
+
+## Stack
+
+PyTorch, PyTorch Geometric, pandas, numpy, Jupyter Notebooks, YAML.
+
+## Live Demo
+
+An interactive demo of the prediction system is available on Streamlit Cloud: [Try the GNN demo](https://portfolio-gnn-demo.streamlit.app).
+
+## Code
+
+{/* TODO: paste representative model snippet here (GAT layer + Spatio-Temporal block). */}

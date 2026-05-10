@@ -1,0 +1,17 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { Icon } from 'astro-icon/components';
+---
+
+<BaseLayout title="404 — Not Found" description="Page not found." noIndex>
+  <section class="container-wide flex min-h-[70vh] flex-col items-center justify-center py-20 text-center">
+    <p class="font-mono text-sm text-accent-light dark:text-accent-dark">404</p>
+    <h1 class="mt-2 font-display text-4xl font-bold tracking-tight sm:text-5xl">This page wandered off.</h1>
+    <p class="mt-4 max-w-xl text-base text-ink-900/75 dark:text-[#c9d1d9]/75">
+      The link you followed might be broken, or the page may have moved. Let's get you back.
+    </p>
+    <a href="/" class="btn-primary mt-8">
+      <Icon name="lucide:arrow-left" class="h-4 w-4" /> Back to Home
+    </a>
+  </section>
+</BaseLayout>

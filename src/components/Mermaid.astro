@@ -1,0 +1,53 @@
+---
+export interface Props { code: string; }
+const { code } = Astro.props;
+---
+
+<div class="mermaid not-prose my-6 overflow-x-auto rounded-lg border border-ink-900/10 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+  {code}
+</div>
+
+<script>
+  import mermaid from 'mermaid';
+
+  function applyTheme() {
+    const isDark = document.documentElement.classList.contains('dark');
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'loose',
+      theme: isDark ? 'dark' : 'default',
+      themeVariables: isDark
+        ? { primaryColor: '#1f2937', primaryTextColor: '#e5e7eb', lineColor: '#58a6ff' }
+        : { primaryColor: '#f0fdfa', primaryTextColor: '#0f172a', lineColor: '#0f766e' },
+    });
+  }
+
+  async function render() {
+    applyTheme();
+    const blocks = document.querySelectorAll<HTMLElement>('.mermaid');
+    for (let i = 0; i < blocks.length; i++) {
+      const el = blocks[i];
+      if (el.dataset.rendered === 'true') continue;
+      const src = el.dataset.source ?? el.textContent ?? '';
+      if (!el.dataset.source) el.dataset.source = src;
+      try {
+        const { svg } = await mermaid.render(`mmd-${Date.now()}-${i}`, src);
+        el.innerHTML = svg;
+        el.dataset.rendered = 'true';
+      } catch (e) {
+        console.error('Mermaid render error', e);
+      }
+    }
+  }
+
+  render();
+  // Re-render on theme changes
+  const observer = new MutationObserver(() => {
+    document.querySelectorAll<HTMLElement>('.mermaid').forEach((el) => {
+      delete el.dataset.rendered;
+      el.innerHTML = el.dataset.source ?? '';
+    });
+    render();
+  });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+</script>

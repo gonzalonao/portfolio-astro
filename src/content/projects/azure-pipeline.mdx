@@ -1,0 +1,46 @@
+---
+title: "End-to-End Data Pipeline with Medallion Architecture"
+summary: "Bronze/Silver/Gold data pipeline using Azure Data Factory, Microsoft Fabric, and Power BI semantic models with DAX."
+date: 2025-12-01
+featured: true
+order: 4
+tags: ["Azure Data Factory", "Microsoft Fabric", "PySpark", "Power BI", "DAX"]
+status: "completed"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Overview
+
+A production-style medallion pipeline moving raw operational data through standardized **Bronze → Silver → Gold** layers, with the Gold layer feeding a Power BI semantic model used for executive reporting. Built end-to-end during the ESESA Master's program.
+
+<Mermaid code={`flowchart LR
+  S[Source<br/>SQL / Files / API] --> ADF[Azure Data Factory<br/>orchestration]
+  ADF --> B[Bronze<br/>raw, append-only]
+  B --> SI[Silver<br/>cleaned, conformed]
+  SI --> G[Gold<br/>star schema]
+  G --> F[Microsoft Fabric<br/>Lakehouse]
+  F --> PBI[Power BI<br/>semantic model + DAX]`} />
+
+## Bronze — Raw Capture
+
+Azure Data Factory pipelines land source data verbatim into Blob Storage / Lakehouse in append-only Parquet, partitioned by ingest date. No transformations — the goal is auditability and replayability.
+
+## Silver — Conformed
+
+PySpark notebooks in Microsoft Fabric apply schema enforcement, type coercion, deduplication, and slowly-changing-dimension handling. Output is a set of cleaned, business-key'd tables ready for modeling.
+
+## Gold — Star Schema
+
+Fact and dimension tables modeled for analytics, with surrogate keys, role-playing dimensions, and pre-aggregated measures where they meaningfully accelerate BI queries.
+
+## Power BI Semantic Layer
+
+DAX measures and calculation groups expose the Gold layer to business users. Examples: time-intelligence (YoY, rolling 12-month), dynamic format strings, and a calculation group that switches between gross/net measures with a single slicer.
+
+## Live Report
+
+{/* TODO: replace with the Power BI Publish-to-Web embed URL once available. */}
+<div class="not-prose my-6 aspect-video rounded-lg border border-dashed border-ink-900/20 bg-ink-900/[0.02] p-6 text-center text-sm text-ink-900/60 dark:border-white/20 dark:bg-white/[0.02] dark:text-[#c9d1d9]/60">
+  Power BI report embed will go here — paste the Publish-to-Web iframe URL into <code>azure-pipeline.mdx</code>.
+</div>

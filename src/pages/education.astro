@@ -1,0 +1,73 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Timeline from '../components/Timeline.astro';
+import { Icon } from 'astro-icon/components';
+
+const education = [
+  {
+    title: "Master's in Big Data & AI",
+    org: 'ESESA',
+    period: 'In progress',
+    description: 'Topics: ML in Python, RAG with Generative AI, Databricks/PySpark, Power BI, Microsoft Fabric end-to-end, Pentaho ETL, Celonis process mining.',
+  },
+  {
+    title: 'Mathematics Degree',
+    org: 'UNED',
+    period: '3rd year — in progress',
+    description: 'Foundation in calculus, linear algebra, probability, statistics, and discrete mathematics.',
+  },
+  {
+    title: '42 Málaga',
+    org: 'Fundación Telefónica',
+    period: 'Nov 2023 – Nov 2025',
+    description: 'C systems programming, Unix shell scripting, low-level networking. Notable project: Minishell.',
+  },
+];
+
+const certifications = [
+  { title: 'Microsoft Power BI Data Analyst', subtitle: 'PL-300 prep', hours: '200h' },
+  { title: 'Microsoft Azure Solutions Developer', subtitle: 'AZ-204 track · Arelance', hours: '100h' },
+  { title: 'Master en SQL Server', subtitle: 'IBM SkillsBuild', hours: '40h' },
+  { title: 'Análisis de Datos con Power BI Desktop', subtitle: 'IBM SkillsBuild', hours: '40h' },
+  { title: 'Data Analytics: Transformando Datos en Decisiones Estratégicas', subtitle: '', hours: '50h' },
+  { title: 'Machine Learning aplicado usando Python', subtitle: '', hours: '150h' },
+  { title: 'Certificación de Experto Web en Hacking Ético', subtitle: '', hours: '120h' },
+  { title: 'Certificación de Iniciación al Hacking Ético', subtitle: '', hours: '120h' },
+];
+---
+
+<BaseLayout title="Education — Gonzalo López Crespo" description="Formal education and certifications.">
+  <section class="container-wide py-16">
+    <h1 class="font-display text-4xl font-bold tracking-tight sm:text-5xl">Education</h1>
+    <p class="mt-4 max-w-2xl text-lg text-ink-900/75 dark:text-[#c9d1d9]/75">
+      Formal training, current studies, and professional certifications.
+    </p>
+
+    <div class="mt-12 grid gap-12 lg:grid-cols-2">
+      <div>
+        <h2 class="font-display text-xl font-semibold">Formal Education</h2>
+        <div class="mt-6">
+          <Timeline items={education} />
+        </div>
+      </div>
+
+      <div>
+        <h2 class="font-display text-xl font-semibold">Certifications</h2>
+        <div class="mt-6 grid gap-3 sm:grid-cols-2">
+          {certifications.map((c) => (
+            <div class="group rounded-xl border border-ink-900/10 bg-white p-4 transition-all hover:-translate-y-0.5 hover:border-accent-light hover:shadow-md dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-accent-dark">
+              <div class="flex items-start gap-3">
+                <Icon name="lucide:award" class="mt-0.5 h-5 w-5 shrink-0 text-accent-light dark:text-accent-dark" />
+                <div class="flex-1">
+                  <p class="font-display text-sm font-semibold leading-snug">{c.title}</p>
+                  {c.subtitle && <p class="mt-0.5 text-xs text-ink-900/60 dark:text-[#c9d1d9]/60">{c.subtitle}</p>}
+                  <p class="mt-2 inline-block rounded bg-ink-900/[0.04] px-2 py-0.5 font-mono text-[11px] text-ink-900/70 dark:bg-white/5 dark:text-[#c9d1d9]/70">{c.hours}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

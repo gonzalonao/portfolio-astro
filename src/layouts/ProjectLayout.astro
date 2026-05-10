@@ -1,0 +1,109 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import TechTag from '../components/TechTag.astro';
+import { Icon } from 'astro-icon/components';
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+
+export interface Props {
+  entry: CollectionEntry<'projects'>;
+  headings: { depth: number; slug: string; text: string }[];
+}
+
+const { entry, headings } = Astro.props;
+const { data } = entry;
+
+const all = (await getCollection('projects')).sort((a, b) => a.data.order - b.data.order);
+const idx = all.findIndex((p) => p.slug === entry.slug);
+const prev = idx > 0 ? all[idx - 1] : null;
+const next = idx < all.length - 1 ? all[idx + 1] : null;
+---
+
+<BaseLayout title={`${data.title} — Gonzalo López Crespo`} description={data.summary}>
+  {/* Breadcrumb */}
+  <div class="container-wide pt-6 text-sm text-ink-900/60 dark:text-[#c9d1d9]/60">
+    <a href="/" class="hover:text-ink-900 dark:hover:text-white">Home</a>
+    <span class="mx-1.5">/</span>
+    <a href="/projects" class="hover:text-ink-900 dark:hover:text-white">Projects</a>
+    <span class="mx-1.5">/</span>
+    <span class="text-ink-900 dark:text-white">{data.title}</span>
+  </div>
+
+  {/* Hero band */}
+  <header class="container-wide pt-8 pb-10">
+    {data.subtitle && <p class="font-mono text-sm text-accent-light dark:text-accent-dark">{data.subtitle}</p>}
+    <h1 class="mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl">{data.title}</h1>
+    <p class="mt-4 max-w-3xl text-lg text-ink-900/75 dark:text-[#c9d1d9]/75">{data.summary}</p>
+    <div class="mt-5 flex flex-wrap items-center gap-2">
+      <span class:list={[
+        'rounded-full px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide',
+        data.status === 'completed'
+          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300'
+          : 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300',
+      ]}>{data.status === 'completed' ? 'Completed' : 'In progress'}</span>
+      {data.tags.map((t) => <TechTag label={t} />)}
+    </div>
+
+    {(data.githubUrl || data.liveDemoUrl) && (
+      <div class="mt-6 flex flex-wrap gap-3">
+        {data.githubUrl && (
+          <a href={data.githubUrl} target="_blank" rel="noopener noreferrer" class="btn-ghost">
+            <Icon name="lucide:github" class="h-4 w-4" /> GitHub
+          </a>
+        )}
+        {data.liveDemoUrl && (
+          <a href={data.liveDemoUrl} target="_blank" rel="noopener noreferrer" class="btn-primary">
+            <Icon name="lucide:external-link" class="h-4 w-4" /> Live Demo
+          </a>
+        )}
+      </div>
+    )}
+  </header>
+
+  {/* Main content + TOC */}
+  <div class="container-wide grid grid-cols-1 gap-10 pb-16 lg:grid-cols-[1fr_220px]">
+    <article class="prose prose-lg max-w-none dark:prose-invert">
+      <slot />
+    </article>
+
+    <aside class="hidden lg:block">
+      <div class="sticky top-20 text-sm">
+        <p class="mb-3 font-display font-semibold uppercase tracking-wide text-ink-900/60 dark:text-[#c9d1d9]/60">On this page</p>
+        <ul class="space-y-2 border-l border-ink-900/10 dark:border-white/10">
+          {headings.filter((h) => h.depth === 2 || h.depth === 3).map((h) => (
+            <li>
+              <a
+                href={`#${h.slug}`}
+                class:list={[
+                  'block border-l-2 border-transparent py-0.5 pl-3 -ml-px text-ink-900/70 hover:border-accent-light hover:text-ink-900 dark:text-[#c9d1d9]/70 dark:hover:border-accent-dark dark:hover:text-white',
+                  h.depth === 3 && 'pl-6 text-xs',
+                ]}
+              >
+                {h.text}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <a href="/projects" class="mt-6 inline-flex items-center gap-1 text-sm text-accent-light dark:text-accent-dark">
+          <Icon name="lucide:arrow-left" class="h-4 w-4" /> All projects
+        </a>
+      </div>
+    </aside>
+  </div>
+
+  {/* Prev / Next */}
+  <nav class="container-wide grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2">
+    {prev ? (
+      <a href={`/projects/${prev.slug}`} class="rounded-xl border border-ink-900/10 p-5 transition-colors hover:border-accent-light dark:border-white/10 dark:hover:border-accent-dark">
+        <p class="text-xs text-ink-900/60 dark:text-[#c9d1d9]/60">← Previous</p>
+        <p class="mt-1 font-display font-semibold">{prev.data.title}</p>
+      </a>
+    ) : <span></span>}
+    {next ? (
+      <a href={`/projects/${next.slug}`} class="rounded-xl border border-ink-900/10 p-5 text-right transition-colors hover:border-accent-light dark:border-white/10 dark:hover:border-accent-dark">
+        <p class="text-xs text-ink-900/60 dark:text-[#c9d1d9]/60">Next →</p>
+        <p class="mt-1 font-display font-semibold">{next.data.title}</p>
+      </a>
+    ) : <span></span>}
+  </nav>
+</BaseLayout>

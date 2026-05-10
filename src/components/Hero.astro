@@ -1,0 +1,79 @@
+---
+import { Icon } from 'astro-icon/components';
+---
+
+<section class="relative isolate overflow-hidden">
+  {/* Light gradient (light mode) */}
+  <div class="absolute inset-0 -z-10 light-glow dark:hidden"></div>
+  {/* Dot grid (dark mode) */}
+  <div class="absolute inset-0 -z-10 hidden dark:block dot-grid opacity-60"></div>
+
+  <div class="container-wide flex min-h-[88vh] flex-col justify-center py-20">
+    <p class="mb-3 font-mono text-sm text-accent-light dark:text-accent-dark">Hello, I'm</p>
+    <h1 class="font-display text-5xl font-bold tracking-tight sm:text-6xl md:text-7xl">
+      Gonzalo López Crespo
+    </h1>
+    <p class="mt-4 text-lg text-ink-900/80 dark:text-[#c9d1d9]/80 sm:text-xl">
+      <span id="role-typer" class="font-medium text-ink-900 dark:text-white"></span><span class="caret ml-0.5">|</span>
+    </p>
+    <p class="mt-6 max-w-2xl text-base leading-relaxed text-ink-900/75 dark:text-[#c9d1d9]/75 sm:text-lg">
+      Math student at UNED, trained at 42 Málaga, pursuing a Master's in Big Data &amp; AI at ESESA. I build end-to-end data systems — from Power BI dashboards to async Python bots and graph neural networks.
+    </p>
+
+    <div class="mt-9 flex flex-wrap gap-3">
+      <a href="#featured-projects" class="btn-primary">
+        <Icon name="lucide:folder" class="h-4 w-4" />
+        View Projects
+      </a>
+      <a href="/cv.pdf" download class="btn-ghost">
+        <Icon name="lucide:download" class="h-4 w-4" />
+        Download CV
+      </a>
+      <a href="https://github.com/gonzalonao/" target="_blank" rel="noopener noreferrer" class="btn-ghost">
+        <Icon name="lucide:github" class="h-4 w-4" />
+        GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .caret {
+    display: inline-block;
+    color: theme('colors.accent.light');
+    animation: blink 1.05s step-end infinite;
+  }
+  :global(.dark) .caret { color: #58a6ff; }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+</style>
+
+<script is:inline>
+  (function () {
+    const el = document.getElementById('role-typer');
+    if (!el) return;
+    const phrases = [
+      'Data Analyst',
+      'BI Developer',
+      'Python Developer',
+      'Big Data & AI Master\'s student',
+    ];
+    let pi = 0, ci = 0, deleting = false;
+    function tick() {
+      const phrase = phrases[pi];
+      if (!deleting) {
+        ci++;
+        el.textContent = phrase.slice(0, ci);
+        if (ci === phrase.length) { deleting = true; setTimeout(tick, 1600); return; }
+      } else {
+        ci--;
+        el.textContent = phrase.slice(0, ci);
+        if (ci === 0) { deleting = false; pi = (pi + 1) % phrases.length; }
+      }
+      setTimeout(tick, deleting ? 35 : 65);
+    }
+    tick();
+  })();
+</script>

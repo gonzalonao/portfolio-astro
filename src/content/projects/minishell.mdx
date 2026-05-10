@@ -1,0 +1,31 @@
+---
+title: "Minishell — A Unix Shell from Scratch in C"
+summary: "Fully functional Unix shell built in C as part of the 42 Málaga curriculum. Process management, pipes, redirections, and manual memory management."
+date: 2024-09-01
+featured: false
+order: 6
+tags: ["C", "POSIX", "Unix", "Make"]
+status: "completed"
+---
+
+## Overview
+
+A fully functional Unix shell written from scratch in C as part of the 42 Málaga curriculum. The project covers the full lifecycle of a real shell: lexing and parsing user input, building an execution tree, fork/exec lifecycle, signal handling, and faithful POSIX semantics for redirections, pipes, and built-in commands.
+
+## What it does
+
+- **Tokenizer + parser** — quoting rules, environment-variable expansion, and operator precedence (`|`, `<`, `>`, `>>`, `<<`).
+- **Execution engine** — `fork`/`execve` with proper file-descriptor plumbing for pipelines of arbitrary length.
+- **Built-ins** — `cd`, `pwd`, `export`, `unset`, `env`, `echo`, `exit`, each respecting POSIX exit-status conventions.
+- **Signals** — `SIGINT` and `SIGQUIT` handled correctly in both interactive and child-process contexts.
+- **Heredocs** — full `<<` support including expansion rules.
+
+## Skills exercised
+
+- C systems programming with strict memory discipline (zero leaks under Valgrind, including on error paths).
+- Process and signal lifecycle, file-descriptor management, environment manipulation.
+- Makefiles, modular project layout, and testing with custom shell scripts.
+
+## Stack
+
+C (C99), POSIX APIs, GNU Make, Valgrind.
