@@ -1,0 +1,31 @@
+---
+import { Icon } from 'astro-icon/components';
+import { getLang, t } from '../i18n';
+
+const lang = getLang(Astro.url);
+const s = t[lang].contact;
+---
+
+<section class="container-wide flex min-h-[70vh] items-center py-20">
+  <div class="mx-auto max-w-2xl rounded-2xl border border-ink-900/10 bg-white p-10 text-center dark:border-white/10 dark:bg-white/[0.02]">
+    <h1 class="font-display text-3xl font-bold tracking-tight sm:text-4xl">{s.title}</h1>
+    <p class="mt-4 text-base leading-relaxed text-ink-900/75 dark:text-[#c9d1d9]/75">{s.body}</p>
+
+    <div class="mt-8 flex flex-wrap justify-center gap-3">
+      <a href="mailto:gonzalonao@gmail.com" class="btn-primary">
+        <Icon name="lucide:mail" class="h-4 w-4" /> gonzalonao@gmail.com
+      </a>
+      <a href="https://www.linkedin.com/in/gonzalolopezcrespo/" target="_blank" rel="noopener noreferrer" class="btn-ghost">
+        <Icon name="lucide:linkedin" class="h-4 w-4" /> LinkedIn
+      </a>
+      <a href="https://github.com/gonzalonao/" target="_blank" rel="noopener noreferrer" class="btn-ghost">
+        <Icon name="lucide:github" class="h-4 w-4" /> GitHub
+      </a>
+    </div>
+
+    <div class="mt-8 border-t border-ink-900/10 pt-6 text-sm text-ink-900/60 dark:border-white/10 dark:text-[#c9d1d9]/60">
+      <p><strong class="text-ink-900 dark:text-white">{s.languagesLabel}:</strong> {s.languagesValue}</p>
+      <p class="mt-1"><strong class="text-ink-900 dark:text-white">{s.locationLabel}:</strong> {s.locationValue}</p>
+    </div>
+  </div>
+</section>

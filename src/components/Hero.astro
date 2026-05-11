@@ -1,5 +1,10 @@
 ---
 import { Icon } from 'astro-icon/components';
+import { getLang, t } from '../i18n';
+
+const lang = getLang(Astro.url);
+const s = t[lang].hero;
+const phrases = [...s.roles];
 ---
 
 <section class="relative isolate overflow-hidden">
@@ -8,30 +13,31 @@ import { Icon } from 'astro-icon/components';
   {/* Dot grid (dark mode) */}
   <div class="absolute inset-0 -z-10 hidden dark:block dot-grid opacity-60"></div>
 
-  <div class="container-wide flex min-h-[78vh] flex-col justify-start pt-24 pb-16 sm:pt-28">
-    <p class="mb-3 font-mono text-sm text-accent-light dark:text-accent-dark">Hello, I'm</p>
+  <div class="container-wide flex flex-col pt-20 pb-20 sm:pt-28 sm:pb-24">
+    <p class="mb-3 font-mono text-sm text-accent-light dark:text-accent-dark">{s.greeting}</p>
     <h1 class="font-display text-5xl font-bold tracking-tight sm:text-6xl md:text-7xl">
       Gonzalo López Crespo
     </h1>
     <p class="mt-4 text-lg text-ink-900/80 dark:text-[#c9d1d9]/80 sm:text-xl">
       <span id="role-typer" class="font-medium text-ink-900 dark:text-white"></span><span class="caret ml-0.5">|</span>
     </p>
-    <p class="mt-6 max-w-2xl text-base leading-relaxed text-ink-900/75 dark:text-[#c9d1d9]/75 sm:text-lg">
-      I build investing tools — from async Python automation for the Steam Community Market to portfolio analytics dashboards. Math student at UNED, trained at 42 Málaga, with a Master's in Big Data &amp; AI at ESESA.
-    </p>
+    <p
+      class="mt-6 max-w-2xl text-base leading-relaxed text-ink-900/75 dark:text-[#c9d1d9]/75 sm:text-lg"
+      set:html={s.subtitleHtml}
+    />
 
     <div class="mt-9 flex flex-wrap gap-3">
       <a href="#featured-projects" class="btn-primary">
         <Icon name="lucide:folder" class="h-4 w-4" />
-        View Projects
+        {s.ctaProjects}
       </a>
       <a href="/cv.pdf" download class="btn-ghost">
         <Icon name="lucide:download" class="h-4 w-4" />
-        Download CV
+        {s.ctaCv}
       </a>
       <a href="https://github.com/gonzalonao/" target="_blank" rel="noopener noreferrer" class="btn-ghost">
         <Icon name="lucide:github" class="h-4 w-4" />
-        GitHub
+        {s.ctaGh}
       </a>
     </div>
   </div>
@@ -50,16 +56,10 @@ import { Icon } from 'astro-icon/components';
   }
 </style>
 
-<script is:inline>
+<script is:inline define:vars={{ phrases }}>
   (function () {
     const el = document.getElementById('role-typer');
     if (!el) return;
-    const phrases = [
-      'Data Analyst',
-      'BI Developer',
-      'Python Developer',
-      'AI & LLM Engineer',
-    ];
     let pi = 0, ci = 0, deleting = false;
     function tick() {
       const phrase = phrases[pi];

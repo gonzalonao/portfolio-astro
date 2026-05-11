@@ -1,0 +1,46 @@
+---
+title: "Pipeline de Datos de Punta a Punta con Arquitectura Medallion"
+summary: "Pipeline de datos Bronze/Silver/Gold usando Azure Data Factory, Microsoft Fabric y modelos semánticos de Power BI con DAX."
+date: 2025-12-01
+featured: true
+order: 4
+tags: ["Azure Data Factory", "Microsoft Fabric", "PySpark", "Power BI", "DAX"]
+status: "completed"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Visión general
+
+Un pipeline medallion estilo producción que mueve datos operacionales en crudo a través de las capas estandarizadas **Bronze → Silver → Gold**, donde la capa Gold alimenta un modelo semántico de Power BI usado para reporting ejecutivo. Construido de punta a punta durante el Máster de ESESA.
+
+<Mermaid code={`flowchart LR
+  S[Origen<br/>SQL / Ficheros / API] --> ADF[Azure Data Factory<br/>orquestación]
+  ADF --> B[Bronze<br/>crudo, append-only]
+  B --> SI[Silver<br/>limpio, conformado]
+  SI --> G[Gold<br/>esquema en estrella]
+  G --> F[Microsoft Fabric<br/>Lakehouse]
+  F --> PBI[Power BI<br/>modelo semántico + DAX]`} />
+
+## Bronze — captura cruda
+
+Los pipelines de Azure Data Factory aterrizan los datos origen sin transformar en Blob Storage / Lakehouse en Parquet append-only, particionado por fecha de ingesta. Sin transformaciones — el objetivo es auditabilidad y replayabilidad.
+
+## Silver — conformado
+
+Notebooks PySpark en Microsoft Fabric aplican enforcement de esquema, coerción de tipos, deduplicación y manejo de dimensiones de cambio lento. La salida es un conjunto de tablas limpias, con clave de negocio, listas para modelar.
+
+## Gold — esquema en estrella
+
+Tablas de hechos y dimensiones modeladas para analítica, con claves subrogadas, dimensiones role-playing y medidas pre-agregadas donde aceleran de forma significativa las consultas BI.
+
+## Capa semántica Power BI
+
+Las medidas DAX y los grupos de cálculo exponen la capa Gold a usuarios de negocio. Ejemplos: time-intelligence (interanual, móvil 12 meses), cadenas de formato dinámicas y un grupo de cálculo que conmuta entre medidas brutas/netas con un único segmentador.
+
+## Informe en vivo
+
+{/* TODO: sustituir por la URL de embed Publish-to-Web de Power BI cuando esté disponible. */}
+<div class="not-prose my-6 aspect-video rounded-lg border border-dashed border-ink-900/20 bg-ink-900/[0.02] p-6 text-center text-sm text-ink-900/60 dark:border-white/20 dark:bg-white/[0.02] dark:text-[#c9d1d9]/60">
+  Aquí irá el embed del informe de Power BI — pega la URL del iframe Publish-to-Web en <code>azure-pipeline.mdx</code>.
+</div>

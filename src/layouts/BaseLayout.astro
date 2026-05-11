@@ -2,6 +2,7 @@
 import '../styles/global.css';
 import Navbar from '../components/Navbar.astro';
 import Footer from '../components/Footer.astro';
+import { getLang, altLangPath } from '../i18n';
 
 export interface Props {
   title?: string;
@@ -10,25 +11,38 @@ export interface Props {
   noIndex?: boolean;
 }
 
+const lang = getLang(Astro.url);
+const defaultTitle = lang === 'es'
+  ? 'Gonzalo López Crespo — Analista de Datos y Desarrollador Python'
+  : 'Gonzalo López Crespo — Data Analyst & Python Developer';
+const defaultDescription = lang === 'es'
+  ? 'Portfolio de Gonzalo López Crespo: Analista de Datos, Desarrollador BI y Desarrollador Python, con base en Málaga.'
+  : 'Portfolio of Gonzalo López Crespo: Data Analyst, BI Developer, and Python Developer based in Málaga, Spain.';
+
 const {
-  title = 'Gonzalo López Crespo — Data Analyst & Python Developer',
-  description = 'Portfolio of Gonzalo López Crespo: Data Analyst, BI Developer, and Python Developer based in Málaga, Spain. Big Data & AI Master’s student.',
+  title = defaultTitle,
+  description = defaultDescription,
   image = '/og.png',
   noIndex = false,
 } = Astro.props;
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const ogImage = new URL(image, Astro.site).toString();
+const altUrlEn = new URL(altLangPath(Astro.url.pathname, 'en'), Astro.site);
+const altUrlEs = new URL(altLangPath(Astro.url.pathname, 'es'), Astro.site);
 ---
 
 <!doctype html>
-<html lang="en" class="scroll-smooth">
+<html lang={lang} class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
     <link rel="canonical" href={canonicalURL} />
+    <link rel="alternate" hreflang="en" href={altUrlEn} />
+    <link rel="alternate" hreflang="es" href={altUrlEs} />
+    <link rel="alternate" hreflang="x-default" href={altUrlEn} />
     {noIndex && <meta name="robots" content="noindex" />}
 
     <title>{title}</title>
@@ -64,7 +78,7 @@ const ogImage = new URL(image, Astro.site).toString();
   </head>
 
   <body>
-    <a href="#main" class="skip-link">Skip to content</a>
+    <a href="#main" class="skip-link">{lang === 'es' ? 'Saltar al contenido' : 'Skip to content'}</a>
     <Navbar />
     <main id="main">
       <slot />

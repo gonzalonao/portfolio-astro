@@ -1,11 +1,14 @@
 ---
 import { Icon } from 'astro-icon/components';
+import { getLang, t } from '../i18n';
+const lang = getLang(Astro.url);
+const strings = t[lang].footer;
 const year = new Date().getFullYear();
 ---
 
 <footer class="mt-24 border-t border-ink-900/10 py-10 dark:border-white/10">
   <div class="container-wide flex flex-col items-center justify-between gap-4 text-sm text-ink-900/60 dark:text-[#c9d1d9]/60 md:flex-row">
-    <p>© {year} Gonzalo López Crespo. Built with Astro & Tailwind.</p>
+    <p>© {year} Gonzalo López Crespo. {strings.builtWith}</p>
     <div class="flex items-center gap-4">
       <a href="https://github.com/gonzalonao/" target="_blank" rel="noopener noreferrer" aria-label="GitHub" class="hover:text-accent-light dark:hover:text-accent-dark">
         <Icon name="lucide:github" class="h-5 w-5" />
