@@ -24,14 +24,14 @@ const skillGroups = [
     skills: ['Azure Data Factory', 'Databricks', 'PySpark', 'Medallion Architecture', 'Pentaho PDI', 'Celonis'],
   },
   {
-    title: 'ML / Deep Learning',
+    title: 'AI / LLM / Deep Learning',
     color: 'purple' as const,
-    skills: ['PyTorch', 'PyTorch Geometric', 'scikit-learn', 'GNNs (GCN, GAT)', 'CNN', 'LSTM', 'RAG'],
+    skills: ['RAG', 'LangChain', 'OpenAI API', 'HuggingFace', 'PyTorch', 'PyTorch Geometric', 'scikit-learn', 'GNNs (GCN, GAT)', 'LSTM'],
   },
   {
-    title: 'Programming',
+    title: 'Programming & Trading Infra',
     color: 'orange' as const,
-    skills: ['Python', 'pandas', 'asyncio', 'aiohttp', 'Selenium', 'BeautifulSoup', 'numpy', 'SQL', 'JavaScript', 'C', 'Shell'],
+    skills: ['Python', 'pandas', 'asyncio', 'aiohttp', 'Selenium', 'BeautifulSoup', 'Rotating proxies', 'numpy', 'SQL', 'JavaScript', 'C'],
   },
   {
     title: 'Cloud',
@@ -52,13 +52,13 @@ const skillGroups = [
           <h2 class="font-display text-3xl font-bold tracking-tight sm:text-4xl">About</h2>
           <div class="mt-6 space-y-4 text-base leading-relaxed text-ink-900/80 dark:text-[#c9d1d9]/80">
             <p>
-              I'm a data professional with an unusual combination: a mathematical foundation from my Mathematics degree at UNED, the systems-level rigor of <strong>42 Málaga</strong> (where you write a Unix shell from scratch in C and ship a real-time online multiplayer in raw networking primitives), and a current Master's in <strong>Big Data &amp; AI at ESESA</strong> covering ML in Python, RAG with generative AI, Databricks/PySpark, end-to-end Microsoft Fabric, Pentaho ETL, and Celonis process mining.
+              I'm a data professional with an unusual combination: a mathematical foundation from my Mathematics degree at UNED, the systems-level rigor of <strong>42 Málaga</strong> (where you write a Unix shell from scratch in C and ship real-time multiplayer in raw networking primitives), and a Master's in <strong>Big Data &amp; AI at ESESA</strong> covering ML, RAG with generative AI, Databricks/PySpark, and end-to-end Microsoft Fabric.
             </p>
             <p>
-              On the BI side I work day-to-day with Power BI (DAX, Power Query M, semantic modeling), Microsoft Fabric, and Excel. On the engineering side I build async Python services, ETL pipelines on Azure Data Factory, and the occasional rotating-proxy scraping infrastructure when a market needs to be observed in real time.
+              My flagship project is a <strong>portfolio analytics &amp; trading automation system for the Steam Community Market</strong> — treating digital game items as a tradable asset class. It combines async Python (<code>asyncio</code> + <code>aiohttp</code>) with a rotating-proxy network for sub-second order placement, a Power Query / Excel BI layer that tracks realized P&amp;L and rolling ROI, and a scheduler that runs unattended trade rotations at off-peak hours. I forked and extended <code>steampy</code> to make this possible.
             </p>
             <p>
-              My ML/DL focus has been deep learning for graph-structured problems — my Master's Thesis is a Spatio-Temporal Graph Neural Network (GCN/GAT + LSTM) predicting how flight delays cascade through the US airport network across 70M+ records.
+              On the BI side I work day-to-day with Power BI (DAX, Power Query M, semantic modeling), Microsoft Fabric, and Excel. My ML/DL focus has been deep learning for graph-structured problems — my Master's Thesis is a Spatio-Temporal Graph Neural Network (GCN/GAT + LSTM) predicting how flight delays cascade through the US airport network across 70M+ records.
             </p>
           </div>
         </div>
