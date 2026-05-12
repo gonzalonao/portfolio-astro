@@ -1,0 +1,29 @@
+---
+import ProjectCard from './ProjectCard.astro';
+import { getCollection } from 'astro:content';
+import { getLang, t } from '../i18n';
+
+const lang = getLang(Astro.url);
+const s = t[lang].projectsPage;
+
+const collectionName = lang === 'es' ? 'projectsEs' : 'projects';
+const projects = (await getCollection(collectionName as 'projects')).sort((a, b) => a.data.order - b.data.order);
+const root = lang === 'es' ? '/es/projects' : '/projects';
+---
+
+<section class="container-wide py-16">
+  <h1 class="font-display text-4xl font-bold tracking-tight sm:text-5xl">{s.title}</h1>
+  <p class="mt-4 max-w-2xl text-lg text-ink-900/75 dark:text-[#c9d1d9]/75">{s.intro}</p>
+
+  <div class="mt-10 grid gap-6 md:grid-cols-2">
+    {projects.map((p) => (
+      <ProjectCard
+        href={`${root}/${p.slug}`}
+        title={p.data.title}
+        summary={p.data.summary}
+        tags={p.data.tags}
+        status={p.data.status}
+      />
+    ))}
+  </div>
+</section>

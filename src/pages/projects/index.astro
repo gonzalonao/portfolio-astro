@@ -1,28 +1,8 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import ProjectCard from '../../components/ProjectCard.astro';
-import { getCollection } from 'astro:content';
-
-const projects = (await getCollection('projects')).sort((a, b) => a.data.order - b.data.order);
+import ProjectsListContent from '../../components/ProjectsListContent.astro';
 ---
 
 <BaseLayout title="Projects — Gonzalo López Crespo" description="Full list of data, BI, and Python projects.">
-  <section class="container-wide py-16">
-    <h1 class="font-display text-4xl font-bold tracking-tight sm:text-5xl">Projects</h1>
-    <p class="mt-4 max-w-2xl text-lg text-ink-900/75 dark:text-[#c9d1d9]/75">
-      End-to-end case studies across data engineering, BI, machine learning, and systems programming.
-    </p>
-
-    <div class="mt-10 grid gap-6 md:grid-cols-2">
-      {projects.map((p) => (
-        <ProjectCard
-          href={`/projects/${p.slug}`}
-          title={p.data.title}
-          summary={p.data.summary}
-          tags={p.data.tags}
-          status={p.data.status}
-        />
-      ))}
-    </div>
-  </section>
+  <ProjectsListContent />
 </BaseLayout>

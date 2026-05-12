@@ -1,0 +1,35 @@
+---
+title: "Chatbot RAG con IA Generativa y Protección contra Prompt Injection"
+summary: "Sistema RAG sensible al contexto con embeddings, memoria contextual y defensas frente a prompt injection. Demo en vivo disponible."
+date: 2026-02-01
+featured: true
+order: 3
+tags: ["Python", "LLMs", "RAG", "Embeddings", "FAISS", "Gradio"]
+liveDemoUrl: "https://huggingface.co/spaces/gonzalonao/portfolio-rag"
+status: "completed"
+---
+
+## Visión general
+
+Un chatbot de generación aumentada por recuperación (RAG) que ancla las respuestas del LLM en un corpus curado, con una capa de memoria para contexto multi-turno y una capa de defensa frente a prompt injection. El sistema está construido para encajar en distintos dominios de negocio cambiando el corpus y un puñado pequeño de parámetros de configuración.
+
+> **Pruébalo en vivo:** [huggingface.co/spaces/gonzalonao/portfolio-rag](https://huggingface.co/spaces/gonzalonao/portfolio-rag)
+
+## RAG con IA Generativa
+
+Los documentos se trocean, embeben e indexan en un vector store. En tiempo de consulta, el mensaje del usuario se embebe, se recuperan los top-k fragmentos más similares, y el LLM recibe un prompt estructurado que contiene la pregunta, el contexto recuperado y el historial de conversación.
+
+## Memoria contextual
+
+La memoria de conversación se resume de forma incremental en lugar de añadirse literalmente — los turnos antiguos se comprimen en un resumen rodante que viaja con cada nueva consulta, manteniendo el prompt dentro de presupuesto mientras preserva contexto de largo alcance.
+
+## Protección contra prompt injection
+
+Varias defensas en capas:
+- **Sanitización de entrada** que elimina patrones conocidos de inyección antes de que el mensaje llegue al modelo.
+- **Separación de roles** en la plantilla de prompt para evitar que el contenido del usuario se parsee como instrucción del sistema.
+- **Validación de salida** que rechaza respuestas que intentan filtrar el prompt del sistema o exfiltrar la estructura del corpus.
+
+## Adaptación dinámica
+
+El mismo motor se despliega en distintos entornos de negocio cambiando (a) el corpus, (b) un system prompt específico del dominio y (c) el modelo de embeddings cuando es necesario. No hace falta reentrenar el modelo.

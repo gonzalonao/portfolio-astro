@@ -1,0 +1,56 @@
+---
+title: "Predicción de Retrasos en Cascada en el Tráfico Aéreo de EE. UU. con GNNs Espacio-Temporales"
+subtitle: "Trabajo Fin de Máster — ESESA"
+summary: "Una red neuronal de grafos espacio-temporal que predice cómo se propagan los retrasos a través de la red de aeropuertos de EE. UU., entrenada sobre más de 70M de registros de vuelos."
+date: 2026-04-01
+featured: true
+order: 2
+tags: ["PyTorch", "PyTorch Geometric", "GNN", "GAT", "LSTM", "Python"]
+githubUrl: "https://github.com/gonzalonao/flight-delay-propagation/tree/feature/project-reset"
+liveDemoUrl: "https://portfolio-gnn-demo.streamlit.app"
+status: "in-progress"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## El problema
+
+Los retrasos de las aerolíneas se propagan por la red aérea de EE. UU. Predecir qué aeropuertos se verán afectados, y cuándo, es un problema de grafo con estructura tanto espacial (topología de rutas) como temporal (hora del día, meteorología). Un retraso en un único hub un lunes por la mañana puede propagarse a docenas de aeropuertos aguas abajo durante las siguientes 12 horas — y los modelos clásicos de series temporales pierden la topología que dirige esa propagación.
+
+## El enfoque
+
+Modelé la red aérea de EE. UU. como un grafo dirigido (nodos = aeropuertos, aristas = rutas). Construí modelos progresivamente desde redes densas y LSTMs, pasando por Graph Convolutional Networks (GCN) y Graph Attention Networks (GAT), culminando en una GNN espacio-temporal que combina capas GNN con LSTM para capturar dependencias tanto estructurales como temporales.
+
+<Mermaid code={`flowchart LR
+  A[Vuelos crudos<br/>2018-2022] --> B[Preprocesado]
+  B --> C[Constructor de grafo<br/>nodos = aeropuertos]
+  C --> D[Features de nodo<br/>clima, tráfico, hora]
+  D --> E[GNN espacio-temporal<br/>+ LSTM]
+  E --> F[Pronóstico multi-horizonte<br/>de retraso]`} />
+
+La capa Graph Attention calcula el coeficiente de atención entre el aeropuerto $i$ y su vecino $j$ como:
+
+$$\alpha_{ij} = \frac{\exp(\text{LeakyReLU}(\vec{a}^T [\mathbf{W}\vec{h}_i \,\|\, \mathbf{W}\vec{h}_j]))}{\sum_{k \in \mathcal{N}_i} \exp(\text{LeakyReLU}(\vec{a}^T [\mathbf{W}\vec{h}_i \,\|\, \mathbf{W}\vec{h}_k]))}$$
+
+Este peso aprendido permite al modelo concentrarse en los aeropuertos aguas arriba más predictivos en lugar de tratar a todos los vecinos por igual — crítico cuando un único hub dirige desproporcionadamente la propagación del retraso.
+
+## El pipeline
+
+Procesé el dataset de retrasos de vuelos de EE. UU. 2018–2022 de Kaggle (~70M de registros) a través de un pipeline modular: preprocesado, entrenamiento multi-horizonte y evaluación. Setup reproducible con gestión de hiperparámetros en YAML y tests unitarios.
+
+- **Preprocesado**: alineamiento temporal, imputación de valores faltantes, escalado de features, splits train/val/test por fecha.
+- **Construcción del grafo**: rutas dirigidas, features de arista (tráfico histórico), features de nodo (estadísticas móviles de clima + retraso).
+- **Entrenamiento**: regresión multi-horizonte (1h, 3h, 6h, 12h) sobre el retraso medio por aeropuerto, con pérdida enmascarada para aeropuertos de bajo tráfico.
+- **Evaluación**: MAE/RMSE por horizonte, más una métrica de "fidelidad de cascada" que mide la concordancia topológica con la difusión real del retraso.
+
+## Stack
+
+PyTorch, PyTorch Geometric, pandas, numpy, Jupyter Notebooks, YAML.
+
+## Demo en vivo
+
+Hay disponible una demo interactiva del sistema de predicción en Streamlit Cloud: [Probar la demo de la GNN](https://portfolio-gnn-demo.streamlit.app).
+
+## Código
+
+{/* TODO: pegar aquí un fragmento representativo del modelo (capa GAT + bloque espacio-temporal). */}

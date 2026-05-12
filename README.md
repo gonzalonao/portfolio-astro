@@ -110,8 +110,8 @@ These are stubs that should be replaced before going public:
 - `public/og.png` — 1200×630 social-share image (referenced in `BaseLayout.astro`).
 - `public/images/projects/` — add cover images and reference them via the `coverImage` frontmatter field.
 - `azure-pipeline.mdx` — replace the dashed iframe placeholder with the Power BI Publish-to-Web embed.
-- **Project repo URLs** — most projects don't have a `githubUrl` yet. Add it in each MDX frontmatter as repos go public.
 - **Live demo URLs** — Streamlit (`portfolio-gnn-demo.streamlit.app`) and HuggingFace (`huggingface.co/spaces/gonzalonao/portfolio-rag`) are placeholders. Confirm or update once the demos are live.
+- **Steam toolkit repo visibility** — the flagship project links to `https://github.com/gonzalonao/steam-market-toolkit`. If that repo is still private, either make it public or remove the `githubUrl` field from `steam-market-portfolio.mdx` until it goes public.
 - `astro.config.mjs` — `site: 'https://gonzalolopezcrespo.com'` is a placeholder; change it to your actual deployed URL (it's used for canonical links and the sitemap).
 - `public/robots.txt` — sitemap URL also points at the placeholder domain; update together.
 

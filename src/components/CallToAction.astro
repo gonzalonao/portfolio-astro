@@ -1,19 +1,30 @@
 ---
 import { Icon } from 'astro-icon/components';
+import { getLang, t } from '../i18n';
+
 export interface Props { heading?: string; }
-const { heading = "Looking for someone with this profile? Let's talk." } = Astro.props;
+const lang = getLang(Astro.url);
+const s = t[lang].cta;
+const defaultHeading = lang === 'es'
+  ? '¿Buscas a alguien con este perfil? Hablemos.'
+  : "Looking for someone with this profile? Let's talk.";
+const { heading = defaultHeading } = Astro.props;
+const subline = lang === 'es'
+  ? 'Abierto a roles en Málaga, Madrid, Barcelona o remoto.'
+  : 'Open to roles in Málaga, Madrid, Barcelona, or remote.';
+const emailLabel = lang === 'es' ? 'Escríbeme' : 'Email me';
 ---
 
 <section class="container-wide py-20">
   <div class="rounded-2xl border border-ink-900/10 bg-gradient-to-br from-teal-50 to-white p-10 text-center dark:border-white/10 dark:from-blue-500/10 dark:to-transparent">
     <h2 class="font-display text-2xl font-semibold sm:text-3xl">{heading}</h2>
-    <p class="mt-2 text-ink-900/70 dark:text-[#c9d1d9]/70">Open to roles in Málaga, Madrid, Barcelona, or remote.</p>
+    <p class="mt-2 text-ink-900/70 dark:text-[#c9d1d9]/70">{subline}</p>
     <div class="mt-6 flex flex-wrap justify-center gap-3">
       <a href="mailto:gonzalonao@gmail.com" class="btn-primary">
-        <Icon name="lucide:mail" class="h-4 w-4" /> Email me
+        <Icon name="lucide:mail" class="h-4 w-4" /> {emailLabel}
       </a>
       <a href="https://www.linkedin.com/in/gonzalolopezcrespo/" target="_blank" rel="noopener noreferrer" class="btn-ghost">
-        <Icon name="lucide:linkedin" class="h-4 w-4" /> LinkedIn
+        <Icon name="lucide:linkedin" class="h-4 w-4" /> {s.linkedin}
       </a>
     </div>
   </div>

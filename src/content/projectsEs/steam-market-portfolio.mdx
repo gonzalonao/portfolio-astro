@@ -1,0 +1,103 @@
+---
+title: "Steam Market — Análisis de Cartera y Automatización de Trading"
+subtitle: "Tratando los items digitales como una clase de activo negociable"
+summary: "Sistema integral para invertir en el Steam Community Market: ejecución asíncrona de órdenes en Python sobre proxies rotatorios, gestión multi-cuenta y una capa BI en Power Query / Excel que sigue el P&L realizado y el ROI móvil de la cartera."
+date: 2026-03-01
+featured: true
+order: 1
+tags: ["Python", "asyncio", "aiohttp", "Selenium", "BeautifulSoup", "Proxies rotatorios", "Power Query", "Excel", "Quant"]
+githubUrl: "https://github.com/gonzalonao/steam-market-toolkit"
+status: "completed"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Visión general
+
+El Steam Community Market es un mercado secundario donde los items cosméticos de CS2, Rust y TF2 se negocian con liquidez real, libro de órdenes e histórico de precios — en otras palabras, una clase de activo negociable. Este proyecto es el sistema que utilizo para invertir en él: un toolkit en Python que se encarga de la autenticación, descubrimiento de precios, ejecución asíncrona de órdenes y analítica post-trade, junto a una capa BI que monitoriza la cartera como cualquier otro libro de posiciones.
+
+El toolkit nació como un fork de [`steampy`](https://github.com/gonzalonao/steampy) que extendí para ser **totalmente asíncrono** y poder colocar órdenes de compra sobre cientos de items en paralelo — un requisito clave para capturar las ventanas de precio que se abren durante los eventos periódicos de rotación in-game y se cierran en segundos.
+
+<Mermaid code={`flowchart TB
+  subgraph Ingesta
+    A[Auth Selenium - captura cookies] --> B[(steam_cookies.txt)]
+    C[Scraper de histórico] --> D[(CSV / parquet)]
+    E[Monitor de Rust workshop] --> F{Rotación detectada?}
+  end
+  subgraph Ejecución
+    F -->|sí| G[Flood asíncrono de órdenes]
+    G -->|aiohttp + proxies| H[Steam API]
+    H --> I[Listado en venta]
+  end
+  subgraph Cartera
+    D --> J[Power Query M]
+    I --> J
+    J --> K[Dashboard Excel KPI]
+    K --> L[P and L · ROI · Holding period · Exposición]
+  end`} />
+
+## La tesis de inversión
+
+Los precios de los items en el Steam Market vienen marcados por shocks de oferta ligados a eventos in-game: Rust publica una actualización mensual de contenido, CS2 rota sus cajas y un puñado de cosméticos entra o sale del juego con cadencias conocidas. La oferta se mueve lenta (drop tables, probabilidades de cajas) mientras la demanda se mueve con calendario fijo — lo que crea un arbitraje estructuralmente repetible si puedes:
+
+1. **Detectar el evento** en el momento en que se anuncia (a veces minutos antes de que el mercado se reprecie).
+2. **Colocar órdenes de compra por debajo del bid actual** sobre cientos de items en paralelo antes de que el libro las absorba.
+3. **Sentarte sobre el inventario** durante el decay de precio post-evento, y listar a la venta al nuevo equilibrio.
+
+Todo el proyecto existe para hacer los pasos 1–3 mecánicos.
+
+## Python asíncrono — capa de ejecución
+
+La librería original `steampy` es síncrona, lo que te coloca en desventaja fundamental cuando la ventana de repricing del mercado es de sub-segundos. La forkée y añadí un par `AsyncClient` / `AsyncMarket` construido sobre `aiohttp`, compartiendo el flujo de cookie-auth con el `SteamClient` síncrono pero exponiendo todos los endpoints de mercado como corrutinas.
+
+El cambio de rendimiento es radical: `fast_buy_orders.py` reparte un pool de proxies entre items, asigna cada petición `aiohttp` a un proxy específico, e inunda con órdenes de compra cientos de items concurrentemente. Lo que tardaba ~3 minutos en síncrono se completa en menos de 8 segundos, dentro de la ventana típica de repricing.
+
+## Arquitectura de red — proxies rotatorios
+
+Steam aplica rate-limit agresivo por IP. El toolkit usa una `RotatingProxySession` (subclase de `requests.Session`) con un **índice de rotación a nivel de clase** compartido entre todas las instancias del cliente síncrono, de modo que varios workers no colisionan en el mismo proxy. Los caminos asíncronos saltan la rotación y vinculan proxies concretos a cada shard de items para maximizar el throughput por item.
+
+La capa de sesión también:
+- Captura cookies vía Selenium contra perfiles locales de Chrome (`get_steam_cookies.py`), así ninguna contraseña toca el toolkit.
+- Mantiene estado por cuenta (cookies, cooldowns, presupuestos de peticiones) y lo escribe en `results/steam_cookies.txt` en un formato plano de un bloque por cuenta.
+- Hace failover automático cuando una IP es throttleada; `rotating_get()` reintenta con `ProxyError`.
+
+## Gestión multi-cuenta
+
+Las cuotas de órdenes de compra son por cuenta, así que el toolkit opera contra un pool de cuentas de Steam en paralelo. `start_clients(open(cookies_file))` devuelve un dict `{nombre_cuenta: SteamClient}` y cada script itera el pool. El decorador `@login_required` dentro de `steampy` queda satisfecho directamente por el flujo de cookie-auth — sin prompts de usuario/2FA en cada ejecución.
+
+## Planificador — trades desatendidos por la noche
+
+`scripts/scheduler/run.py` arranca a las 01:59 CET, ejecuta `async_1/2/3.py` (las tres estrategias nocturnas de rotación), y luego lanza `shutdown /s`. Diseñado para una máquina doméstica que se despierta del sleep, opera y se apaga antes de que yo me levante.
+
+## Capa BI — Power Query + dashboard Excel
+
+La parte de datos es la que le pasaría a un reclutador buscando BI. Cada script escribe a un CSV plano en `RESULTS_PATH` con un esquema consistente (`itemname,price,qty,game,account`). Power Query (M) consume esos CSVs, los une contra el diario de operaciones, y el modelo resultante alimenta un dashboard Excel que sigue:
+
+- **P&L realizado** (base FIFO, neto del 13,04% de comisión de Steam).
+- **Distribución del holding period** por juego / por clase de item.
+- **ROI móvil** (7d / 30d / 90d).
+- **Exposición** por juego (CS2 / Rust / TF2) y por categoría de item.
+- **Eficiencia de capital** — % del capital de trabajo desplegado vs. en escrow esperando ejecución.
+
+## Automatización de frontend — Tampermonkey
+
+Un puñado de userscripts JS / Tampermonkey se ocupan de la parte del flujo que aún vive en la UI web de Steam: auto-confirmar pop-ups de trade, batchear listados de venta y superponer contexto de precio inline (bid / ask actuales / mediana 30d) en cada página de mercado para poder hacer sanity check antes de pulsar.
+
+## Stack de un vistazo
+
+| Capa | Herramientas |
+| --- | --- |
+| Ejecución | Python 3.12, `asyncio`, `aiohttp`, fork de `steampy` |
+| Auth | Selenium (captura de cookies de perfil Chrome), `webdriver-manager` |
+| Scraping | `requests`, `BeautifulSoup`, Chromium headless cuando hace falta |
+| Infra | Pool de proxies rotatorios, sesiones multi-cuenta, `schedule` para ejecuciones tipo cron |
+| Datos | `pandas`, diario de trades en CSV / parquet, Power Query (M) |
+| BI | Dashboard Excel de KPIs, medidas estilo DAX |
+| UX | Userscripts Tampermonkey para contexto de precio inline |
+| Tooling | `uv` para gestión de dependencias, `pytest`, `python-dotenv` |
+
+## Qué demuestra este proyecto
+
+- **Propiedad de punta a punta**: desde el flujo de auth y la infra de proxies abajo, pasando por la ejecución asíncrona, hasta un dashboard BI arriba. Misma persona, mismo repo.
+- **Dinero real en juego**: cada decisión arquitectónica (ejecución sub-segundo, P&L consciente de comisiones, contabilidad FIFO) viene forzada porque el sistema opera contra mercados reales con ejecuciones reales.
+- **Disciplina con sabor quant**: el sizing de posiciones, el tracking de exposición y las métricas de ROI no son una idea de última hora — la capa BI está co-diseñada con la capa de ejecución.

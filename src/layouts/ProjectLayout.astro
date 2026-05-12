@@ -4,27 +4,37 @@ import TechTag from '../components/TechTag.astro';
 import { Icon } from 'astro-icon/components';
 import { getCollection } from 'astro:content';
 import type { CollectionEntry } from 'astro:content';
+import { getLang, t } from '../i18n';
 
 export interface Props {
-  entry: CollectionEntry<'projects'>;
+  entry: CollectionEntry<'projects'> | CollectionEntry<'projectsEs'>;
   headings: { depth: number; slug: string; text: string }[];
 }
 
 const { entry, headings } = Astro.props;
 const { data } = entry;
 
-const all = (await getCollection('projects')).sort((a, b) => a.data.order - b.data.order);
+const lang = getLang(Astro.url);
+const tProj = t[lang].project;
+const tNav = t[lang].nav;
+
+// Pick the right collection for prev/next based on lang
+const collectionName = lang === 'es' ? 'projectsEs' : 'projects';
+const all = (await getCollection(collectionName as 'projects')).sort((a, b) => a.data.order - b.data.order);
 const idx = all.findIndex((p) => p.slug === entry.slug);
 const prev = idx > 0 ? all[idx - 1] : null;
 const next = idx < all.length - 1 ? all[idx + 1] : null;
+
+const projectsRoot = lang === 'es' ? '/es/projects' : '/projects';
+const homeRoot = lang === 'es' ? '/es/' : '/';
 ---
 
 <BaseLayout title={`${data.title} — Gonzalo López Crespo`} description={data.summary}>
   {/* Breadcrumb */}
   <div class="container-wide pt-6 text-sm text-ink-900/60 dark:text-[#c9d1d9]/60">
-    <a href="/" class="hover:text-ink-900 dark:hover:text-white">Home</a>
+    <a href={homeRoot} class="hover:text-ink-900 dark:hover:text-white">{tNav.home}</a>
     <span class="mx-1.5">/</span>
-    <a href="/projects" class="hover:text-ink-900 dark:hover:text-white">Projects</a>
+    <a href={projectsRoot} class="hover:text-ink-900 dark:hover:text-white">{tProj.breadcrumbProjects}</a>
     <span class="mx-1.5">/</span>
     <span class="text-ink-900 dark:text-white">{data.title}</span>
   </div>
@@ -40,20 +50,20 @@ const next = idx < all.length - 1 ? all[idx + 1] : null;
         data.status === 'completed'
           ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300'
           : 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300',
-      ]}>{data.status === 'completed' ? 'Completed' : 'In progress'}</span>
-      {data.tags.map((t) => <TechTag label={t} />)}
+      ]}>{data.status === 'completed' ? tProj.statusCompleted : tProj.statusInProgress}</span>
+      {data.tags.map((tag) => <TechTag label={tag} />)}
     </div>
 
     {(data.githubUrl || data.liveDemoUrl) && (
       <div class="mt-6 flex flex-wrap gap-3">
         {data.githubUrl && (
           <a href={data.githubUrl} target="_blank" rel="noopener noreferrer" class="btn-ghost">
-            <Icon name="lucide:github" class="h-4 w-4" /> GitHub
+            <Icon name="lucide:github" class="h-4 w-4" /> {tProj.github}
           </a>
         )}
         {data.liveDemoUrl && (
           <a href={data.liveDemoUrl} target="_blank" rel="noopener noreferrer" class="btn-primary">
-            <Icon name="lucide:external-link" class="h-4 w-4" /> Live Demo
+            <Icon name="lucide:external-link" class="h-4 w-4" /> {tProj.liveDemo}
           </a>
         )}
       </div>
@@ -68,7 +78,7 @@ const next = idx < all.length - 1 ? all[idx + 1] : null;
 
     <aside class="hidden lg:block">
       <div class="sticky top-20 text-sm">
-        <p class="mb-3 font-display font-semibold uppercase tracking-wide text-ink-900/60 dark:text-[#c9d1d9]/60">On this page</p>
+        <p class="mb-3 font-display font-semibold uppercase tracking-wide text-ink-900/60 dark:text-[#c9d1d9]/60">{tProj.tableOfContents}</p>
         <ul class="space-y-2 border-l border-ink-900/10 dark:border-white/10">
           {headings.filter((h) => h.depth === 2 || h.depth === 3).map((h) => (
             <li>
@@ -84,8 +94,8 @@ const next = idx < all.length - 1 ? all[idx + 1] : null;
             </li>
           ))}
         </ul>
-        <a href="/projects" class="mt-6 inline-flex items-center gap-1 text-sm text-accent-light dark:text-accent-dark">
-          <Icon name="lucide:arrow-left" class="h-4 w-4" /> All projects
+        <a href={projectsRoot} class="mt-6 inline-flex items-center gap-1 text-sm text-accent-light dark:text-accent-dark">
+          <Icon name="lucide:arrow-left" class="h-4 w-4" /> {tProj.breadcrumbProjects}
         </a>
       </div>
     </aside>
@@ -94,14 +104,14 @@ const next = idx < all.length - 1 ? all[idx + 1] : null;
   {/* Prev / Next */}
   <nav class="container-wide grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2">
     {prev ? (
-      <a href={`/projects/${prev.slug}`} class="rounded-xl border border-ink-900/10 p-5 transition-colors hover:border-accent-light dark:border-white/10 dark:hover:border-accent-dark">
-        <p class="text-xs text-ink-900/60 dark:text-[#c9d1d9]/60">← Previous</p>
+      <a href={`${projectsRoot}/${prev.slug}`} class="rounded-xl border border-ink-900/10 p-5 transition-colors hover:border-accent-light dark:border-white/10 dark:hover:border-accent-dark">
+        <p class="text-xs text-ink-900/60 dark:text-[#c9d1d9]/60">← {tProj.prev}</p>
         <p class="mt-1 font-display font-semibold">{prev.data.title}</p>
       </a>
     ) : <span></span>}
     {next ? (
-      <a href={`/projects/${next.slug}`} class="rounded-xl border border-ink-900/10 p-5 text-right transition-colors hover:border-accent-light dark:border-white/10 dark:hover:border-accent-dark">
-        <p class="text-xs text-ink-900/60 dark:text-[#c9d1d9]/60">Next →</p>
+      <a href={`${projectsRoot}/${next.slug}`} class="rounded-xl border border-ink-900/10 p-5 text-right transition-colors hover:border-accent-light dark:border-white/10 dark:hover:border-accent-dark">
+        <p class="text-xs text-ink-900/60 dark:text-[#c9d1d9]/60">{tProj.next} →</p>
         <p class="mt-1 font-display font-semibold">{next.data.title}</p>
       </a>
     ) : <span></span>}

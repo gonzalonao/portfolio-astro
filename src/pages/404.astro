@@ -1,17 +1,33 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { Icon } from 'astro-icon/components';
+import { t } from '../i18n';
+// 404 is served for any unknown URL, so we cannot reliably detect locale from
+// Astro.url here. We render both languages stacked, which is friendly enough
+// for a static site and avoids picking the wrong one. Most of the page is the
+// same regardless of language.
+const en = t.en.notFound;
+const es = t.es.notFound;
 ---
 
 <BaseLayout title="404 — Not Found" description="Page not found." noIndex>
   <section class="container-wide flex min-h-[70vh] flex-col items-center justify-center py-20 text-center">
     <p class="font-mono text-sm text-accent-light dark:text-accent-dark">404</p>
-    <h1 class="mt-2 font-display text-4xl font-bold tracking-tight sm:text-5xl">This page wandered off.</h1>
+    <h1 class="mt-2 font-display text-4xl font-bold tracking-tight sm:text-5xl">{en.heading}</h1>
+    <p class="mt-1 font-display text-2xl tracking-tight text-ink-900/70 dark:text-[#c9d1d9]/70">{es.heading}</p>
     <p class="mt-4 max-w-xl text-base text-ink-900/75 dark:text-[#c9d1d9]/75">
-      The link you followed might be broken, or the page may have moved. Let's get you back.
+      {en.body}
     </p>
-    <a href="/" class="btn-primary mt-8">
-      <Icon name="lucide:arrow-left" class="h-4 w-4" /> Back to Home
-    </a>
+    <p class="mt-2 max-w-xl text-sm text-ink-900/60 dark:text-[#c9d1d9]/60">
+      {es.body}
+    </p>
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <a href="/" class="btn-primary">
+        <Icon name="lucide:arrow-left" class="h-4 w-4" /> {en.cta}
+      </a>
+      <a href="/es/" class="btn-ghost">
+        <Icon name="lucide:arrow-left" class="h-4 w-4" /> {es.cta}
+      </a>
+    </div>
   </section>
 </BaseLayout>
