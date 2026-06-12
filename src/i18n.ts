@@ -37,7 +37,7 @@ export const t = {
       greeting: "Hello, I'm",
       roles: ['Data Analyst', 'BI Developer', 'Python Developer', 'AI & LLM Engineer'],
       subtitleHtml:
-        "I build investing tools — from async Python automation for the Steam Community Market to portfolio analytics dashboards. Mathematics student, trained at <strong>42 Málaga</strong>, currently pursuing a Master's in Big Data &amp; AI.",
+        "I build <strong>data &amp; AI systems</strong> in Python — cloud pipelines, ML and LLM applications, and automation. Backed by a Mathematics degree, systems training at <strong>42 Málaga</strong>, a Master's in <strong>Big Data &amp; AI</strong>, and Microsoft PL-300 certification.",
       ctaProjects: 'View Projects',
       ctaCv: 'Download CV',
       ctaGh: 'GitHub',
@@ -45,9 +45,9 @@ export const t = {
     about: {
       heading: 'About',
       paragraphsHtml: [
-        "I'm a data professional with an unusual combination: a mathematical foundation from my Mathematics degree, the systems-level rigor of <strong>42 Málaga</strong> (where you write a Unix shell from scratch in C and ship real-time multiplayer in raw networking primitives), and a Master's in <strong>Big Data &amp; AI</strong> covering ML, RAG with generative AI, Databricks/PySpark, and end-to-end Microsoft Fabric.",
-        "My flagship project is a <strong>portfolio analytics &amp; trading automation system for the Steam Community Market</strong> — treating digital game items as a tradable asset class. It combines async Python (<code>asyncio</code> + <code>aiohttp</code>) with a rotating-proxy network for sub-second order placement, a Power Query / Excel BI layer that tracks realized P&amp;L and rolling ROI, and a scheduler that runs unattended trade rotations at off-peak hours. I forked and extended <code>steampy</code> to make this possible.",
-        "On the BI side I work day-to-day with Power BI (DAX, Power Query M, semantic modeling), Microsoft Fabric, and Excel. My ML/DL focus has been deep learning for graph-structured problems — my Master's Thesis is a Spatio-Temporal Graph Neural Network (GCN/GAT + LSTM) predicting how flight delays cascade through the US airport network across 70M+ records.",
+        "I'm a developer working across <strong>data engineering, AI/ML and Python</strong>, with an unusual foundation: a Mathematics degree in progress, the systems-level rigor of <strong>42 Málaga</strong> (where you write a Unix shell from scratch in C), and a Master's in <strong>Big Data &amp; AI</strong>. I'm also a Microsoft <strong>PL-300</strong>–certified Power BI analyst — the analytics layer that turns the data I move and model into decisions.",
+        "My deepest work is in <strong>machine learning and deep learning</strong>. My Master's Thesis is a Spatio-Temporal Graph Neural Network (GCN/GAT + LSTM) predicting how flight delays cascade through the US airport network across 70M+ records. Alongside it I build RAG and generative-AI systems and train models with scikit-learn and PyTorch.",
+        "On the engineering side I design cloud data pipelines on <strong>Azure Data Factory, Microsoft Fabric and Databricks/PySpark</strong> with Medallion (Bronze/Silver/Gold) architecture, and I learn by building: I forked and extended <code>steampy</code> to power an async-Python trading and portfolio-analytics system over the Steam Community Market (<code>asyncio</code> + <code>aiohttp</code>), and built <strong>MálagaHelper</strong>, an LLM city assistant hardened against prompt injection. The thread across all of it: turning messy data into decisions people can act on.",
       ],
       quickFactsTitle: 'Quick facts',
       location: 'Location',
@@ -57,7 +57,7 @@ export const t = {
       studying: 'Currently studying',
       studyingValue: "Master's in Big Data & AI",
       openTo: 'Open to roles',
-      openToValue: 'Data Analyst · BI Developer · Python Developer',
+      openToValue: 'AI / ML Engineer · Python Developer · Data Analyst',
     },
     skills: {
       heading: 'What I work with',
@@ -131,7 +131,7 @@ export const t = {
       greeting: 'Hola, soy',
       roles: ['Analista de Datos', 'Desarrollador BI', 'Desarrollador Python', 'Ingeniero de IA y LLMs'],
       subtitleHtml:
-        'Construyo herramientas de inversión — desde automatización asíncrona en Python para el Steam Community Market hasta dashboards de análisis de cartera. Estudiante de Matemáticas, formado en <strong>42 Málaga</strong>, cursando un Máster en Big Data e IA.',
+        'Construyo <strong>sistemas de datos e IA</strong> en Python — pipelines en la nube, aplicaciones de ML y LLMs, y automatización. Con base en un Grado de Matemáticas, formación de sistemas en <strong>42 Málaga</strong>, un Máster en <strong>Big Data e IA</strong> y la certificación Microsoft PL-300.',
       ctaProjects: 'Ver proyectos',
       ctaCv: 'Descargar CV',
       ctaGh: 'GitHub',
@@ -139,9 +139,9 @@ export const t = {
     about: {
       heading: 'Sobre mí',
       paragraphsHtml: [
-        'Soy un profesional de datos con una combinación poco habitual: una base matemática del Grado de Matemáticas, el rigor a nivel de sistemas de <strong>42 Málaga</strong> (donde se escribe una shell de Unix desde cero en C y se construye un multijugador en tiempo real usando primitivas de red), y un Máster en <strong>Big Data e IA</strong> que cubre ML, RAG con IA generativa, Databricks/PySpark y Microsoft Fabric de punta a punta.',
-        'Mi proyecto bandera es un <strong>sistema de análisis de cartera y automatización de trading sobre el Steam Community Market</strong> — tratando los items digitales como una clase de activo negociable. Combina Python asíncrono (<code>asyncio</code> + <code>aiohttp</code>) con una red de proxies rotatorios para colocar órdenes en menos de un segundo, una capa BI en Power Query / Excel que sigue el P&amp;L realizado y el ROI móvil, y un planificador que ejecuta las rotaciones de trading desatendidas en horas valle. Para hacerlo posible bifurqué y extendí <code>steampy</code>.',
-        'En la parte BI trabajo a diario con Power BI (DAX, Power Query M, modelado semántico), Microsoft Fabric y Excel. Mi foco en ML/DL ha sido el aprendizaje profundo sobre datos en forma de grafo — mi Trabajo Fin de Máster es una Red Neuronal de Grafos Espacio-Temporal (GCN/GAT + LSTM) que predice cómo se propagan los retrasos a través de la red de aeropuertos de EE. UU. sobre más de 70M de registros.',
+        'Soy desarrollador en el cruce entre <strong>ingeniería de datos, IA/ML y Python</strong>, con una base poco habitual: un Grado de Matemáticas en curso, el rigor a nivel de sistemas de <strong>42 Málaga</strong> (donde se escribe una shell de Unix desde cero en C) y un Máster en <strong>Big Data e IA</strong>. También soy analista de Power BI certificado en Microsoft <strong>PL-300</strong> — la capa analítica que convierte en decisiones los datos que muevo y modelo.',
+        'Mi trabajo más profundo está en <strong>machine learning y deep learning</strong>. Mi Trabajo Fin de Máster es una Red Neuronal de Grafos Espacio-Temporal (GCN/GAT + LSTM) que predice cómo se propagan los retrasos a través de la red de aeropuertos de EE. UU. sobre más de 70M de registros. Junto a ello construyo sistemas RAG e IA generativa y entreno modelos con scikit-learn y PyTorch.',
+        'En la parte de ingeniería diseño pipelines de datos en la nube sobre <strong>Azure Data Factory, Microsoft Fabric y Databricks/PySpark</strong> con arquitectura Medallion (Bronce/Plata/Oro), y aprendo construyendo: bifurqué y extendí <code>steampy</code> para impulsar un sistema de trading y análisis de cartera en Python asíncrono sobre el Steam Community Market (<code>asyncio</code> + <code>aiohttp</code>), y desarrollé <strong>MálagaHelper</strong>, un asistente urbano basado en LLM endurecido frente a la inyección de prompts. El hilo común: convertir datos desordenados en decisiones accionables.',
       ],
       quickFactsTitle: 'Datos rápidos',
       location: 'Ubicación',
@@ -151,7 +151,7 @@ export const t = {
       studying: 'Cursando actualmente',
       studyingValue: 'Máster en Big Data e IA',
       openTo: 'Abierto a roles',
-      openToValue: 'Analista de Datos · Desarrollador BI · Desarrollador Python',
+      openToValue: 'Ingeniero de IA / ML · Desarrollador Python · Analista de Datos',
     },
     skills: {
       heading: 'Con qué trabajo',
