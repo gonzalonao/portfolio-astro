@@ -5,6 +5,8 @@ import { getLang, t } from '../i18n';
 const lang = getLang(Astro.url);
 const s = t[lang].hero;
 const phrases = [...s.roles];
+const cvHref = lang === 'es' ? '/cv-es.pdf' : '/cv.pdf';
+const cvFilename = lang === 'es' ? 'CV_Gonzalo_Lopez_Crespo_ES.pdf' : 'CV_Gonzalo_Lopez_Crespo_EN.pdf';
 ---
 
 <section class="relative isolate overflow-hidden">
@@ -31,7 +33,7 @@ const phrases = [...s.roles];
         <Icon name="lucide:folder" class="h-4 w-4" />
         {s.ctaProjects}
       </a>
-      <a href="/cv.pdf" download class="btn-ghost">
+      <a href={cvHref} download={cvFilename} class="btn-ghost">
         <Icon name="lucide:download" class="h-4 w-4" />
         {s.ctaCv}
       </a>

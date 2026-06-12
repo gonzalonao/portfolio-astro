@@ -1,0 +1,83 @@
+---
+title: "MálagaHelper — Agentic Tourist Assistant for Málaga"
+subtitle: "Hackathon build · Next.js 16 + agentic LLM + live open data"
+summary: "Multilingual agentic chatbot and interactive map for tourists in Málaga. Auto-detects the visitor's language and translates the entire UI, calls live tools (parking, weather, crowd sensors, events, web search), and surfaces museums, monuments, and real-time parking on a Leaflet map."
+date: 2026-05-20
+featured: true
+order: 2
+tags: ["Next.js 16", "React 19", "TypeScript", "Agentic LLM", "OpenRouter", "Leaflet", "Tailwind v4", "Open Data"]
+githubUrl: "https://github.com/gonzalonao/malagaHelper"
+liveDemoUrl: "https://malaga-helper.vercel.app/"
+status: "completed"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Overview
+
+MálagaHelper is the project I built during a one-week hackathon: an agentic tourist assistant for the city of Málaga. It combines an AI chat panel that **detects the visitor's language from their first message and re-translates the entire UI to match**, with an interactive map that overlays museums, monuments, and live parking occupancy refreshed every 60 seconds.
+
+The agent isn't a thin wrapper around an LLM — it can call a set of typed tools (live parking, weather forecast, crowd-sensor insights, events search, web search) and chain them within a single conversation turn to answer questions like "is the Picasso Museum crowded right now, and what's the closest parking lot with spaces?"
+
+<Mermaid code={`flowchart TB
+  U[Visitor message<br/>any language] --> LD[Language detection]
+  LD --> T[On-the-fly UI translation<br/>llama-3.1-8b]
+  U --> AG[Agentic loop<br/>gemini-2.0-flash]
+  AG -->|tool call| TL{Tool router}
+  TL --> P[get_parking<br/>Málaga Open Data]
+  TL --> W[get_weather<br/>Open-Meteo]
+  TL --> C[get_crowd_insights<br/>Centesimal sensors]
+  TL --> E[search_events<br/>local dataset]
+  TL --> S[web_search<br/>Tavily]
+  P & W & C & E & S --> AG
+  AG --> R[Streaming response]
+  AG -.->|map markers| M[Leaflet map<br/>museums · monuments · parking]`} />
+
+## Agentic loop, not just a chatbot
+
+The chat endpoint at `app/api/chat/route.ts` runs a real agent loop: the model receives a system prompt that describes each tool, decides when to call one (or several in sequence), and the loop continues feeding tool results back into the model until it produces a final answer. Tool definitions and executors live in `lib/tools.ts`, so adding a new capability is a two-file change — define the schema, write the executor, and the agent picks it up on the next request.
+
+The five tools the agent currently has access to:
+
+| Tool | Source | Notes |
+| --- | --- | --- |
+| `get_parking` | Málaga Open Data | Live occupancy per public lot, refreshed every 60s on the client too. |
+| `get_weather` | Open-Meteo | Current conditions + 4-day forecast. No API key required. |
+| `get_crowd_insights` | Centesimal smart-city sensors | Real visitor counts and crowd levels at landmarks (CSV in `data/centesimal/`). |
+| `search_events` | Local `events.json` | Filterable by date, category, and venue. |
+| `web_search` | Tavily | Every query is auto-suffixed with "Málaga" to keep results local. |
+
+## Per-visitor UI translation
+
+The interesting UX trick: the first message decides the language for everything, not just the bot's replies. A `LanguageContext` captures the detected language, a `T` wrapper component re-translates every visible string on the fly via a second, smaller model (`meta-llama/llama-3.1-8b-instruct`) called through `/api/translate`. A French-speaking visitor sees the entire app in French within a few seconds of typing — no `i18n.json` to maintain.
+
+## Stack at a glance
+
+| Layer | Tools |
+| --- | --- |
+| Framework | Next.js 16 (App Router), React 19, TypeScript |
+| Styling | Tailwind CSS v4 |
+| LLM inference | OpenRouter (`google/gemini-2.0-flash-001` for chat, `meta-llama/llama-3.1-8b-instruct` for translation) |
+| Map | Leaflet + react-leaflet, dynamic-imported for SSR safety |
+| Web search | Tavily |
+| Data sources | Málaga Open Data (museums, monuments, parking), Centesimal (crowd sensors) |
+| Deploy | Vercel (with `data/centesimal/**` bundled into the serverless function) |
+
+## What this project demonstrates
+
+- **End-to-end agentic AI in production**: typed tool schemas, agent loop, streaming responses, and a UX that integrates the agent with a live map — not a chat-in-a-box prototype.
+- **Open data as a first-class citizen**: every dynamic value on the map comes from a real public source (Málaga Open Data, Centesimal), not mocked.
+- **Shipped under hackathon constraints**: built, polished, and deployed to Vercel inside a week, including the per-visitor UI translation layer.
+
+## Live Demo
+
+<div class="not-prose my-6">
+  <a
+    href="https://malaga-helper.vercel.app/"
+    target="_blank"
+    rel="noopener noreferrer"
+    class="inline-flex items-center gap-2 rounded-md border border-ink-900/10 bg-white px-4 py-2 text-sm font-medium text-ink-900 transition-colors hover:border-accent-light hover:text-accent-light dark:border-white/10 dark:bg-white/[0.02] dark:text-white dark:hover:border-accent-dark dark:hover:text-accent-dark"
+  >
+    Open malaga-helper.vercel.app →
+  </a>
+</div>
