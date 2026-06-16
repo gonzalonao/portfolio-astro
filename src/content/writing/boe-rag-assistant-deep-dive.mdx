@@ -1,0 +1,378 @@
+---
+title: "Building an Eval-Driven RAG System over Spanish Law"
+description: "A technical deep-dive into the BOE RAG Assistant: structure-aware chunking, hybrid retrieval with Reciprocal Rank Fusion, cross-encoder reranking, an LLM-as-judge harness, and a serving layer designed to be tested without a GPU."
+date: 2026-06-16
+readingMinutes: 16
+tags: ["RAG", "Information Retrieval", "BM25", "Cross-Encoder", "Evals", "Python", "FastAPI"]
+project: "boe-rag-assistant"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+Most retrieval-augmented generation (RAG) demos are built backwards: wire up an
+embedding model and an LLM, get a plausible-looking answer, ship it. The problem
+shows up the moment someone asks whether the answer is *right* — there's no
+number to point at, and no way to tell if the next change made things better or
+worse.
+
+This system inverts that. The domain is Spanish legislation — the **BOE**
+(*Boletín Oficial del Estado*), a daily-updated legal corpus — and the design
+rule is simple: **no retrieval or generation change ships without a before/after
+measurement against a fixed evaluation set.** Quality is treated as an
+engineering contract, enforced in CI, exactly like a test suite.
+
+This article walks through how that contract is built and defended, stage by
+stage.
+
+## The shape of the pipeline
+
+<Mermaid code={`flowchart TB
+  A[BOE Open Data API<br/>sumario + XML] --> B[Ingestion<br/>client · parser · chunker]
+  B --> C[Structure-aware chunks<br/>one per article]
+  C --> D[(HF dataset<br/>corpus)]
+  C --> E[(Hybrid index<br/>dense + BM25)]
+  Q[Query] --> F[Hybrid retrieval<br/>RRF]
+  E --> F
+  F --> G[Cross-encoder rerank]
+  G --> H[Grounded generation<br/>cite-or-refuse]
+  H --> I[Cited answer + sources]`} />
+
+Two halves: an **offline** ingestion path that turns the BOE API into a clean,
+retrieval-ready corpus, and an **online** query path that retrieves, reranks,
+and generates. Between them sits the part that makes the whole thing
+trustworthy — the evaluation harness.
+
+## Chunking is a retrieval decision, not a preprocessing detail
+
+The default move in RAG is to slice documents into fixed-size windows (say, 1000
+characters with 150 of overlap). It's easy, and it's wrong for legal text.
+
+Laws have structure — *título → capítulo → sección → artículo* — and the article
+is the natural unit of meaning *and* of citation. So the chunker walks that
+hierarchy and emits **one chunk per article**, carrying the full context as
+metadata:
+
+```python
+#: Classes that begin a new heading level (chunk boundary, context reset).
+_HIERARCHY_OPENERS = frozenset({_TITULO_NUM, _CAPITULO_NUM, _SECCION})
+
+def consume(self, block: TextBlock) -> None:
+    """Route a single block to the right handler by its style class."""
+    css = block.css_class
+    if css in _HIERARCHY_OPENERS:
+        self._open_hierarchy(css, block.text)   # flush + reset lower levels
+    elif css == _ARTICULO:
+        self._open_article(block.text)          # start a new chunk
+    else:
+        self._append_body(block.text)           # grow the current chunk
+```
+
+Two rules keep the corpus clean. Oversized articles are split into numbered
+parts, but only once a chunk already holds its heading **plus** a paragraph — so
+a heading is never orphaned into its own chunk:
+
+```python
+over_limit = prospective > self._config.max_chunk_chars
+if len(self._current.texts) >= 2 and over_limit:
+    self.flush()
+    self._current = self._new_pending()
+self._current.texts.append(text)
+```
+
+And stray fragments shorter than the minimum are merged back into the preceding
+chunk — but only if they share the same hierarchy scope, so unrelated articles
+never bleed together. The payoff is that every chunk can build its own citation
+— `Ley 39/2015, Artículo 3` — and link straight back to boe.es. That citation
+isn't cosmetic; it's what makes an answer auditable.
+
+Whether this actually beats the naive approach is a claim I'll come back to and
+*measure*, not assert.
+
+## Metrics first: the contract every change is held to
+
+Before any model tuning, the harness defines how retrieval is scored. The
+metrics are pure-Python, dependency-free, and run in CI — so they're instant and
+can never silently drift. Given the retrieved chunk ids in rank order and the
+set of relevant ids, the core ranking metrics are:
+
+**Mean Reciprocal Rank** — how high the first correct hit lands:
+
+$$
+\text{MRR} = \frac{1}{N}\sum_{q=1}^{N} \frac{1}{\text{rank}_q}
+$$
+
+**nDCG@k** with binary relevance — rewards correct hits *and* their position,
+normalised against the ideal ordering:
+
+$$
+\text{DCG@k} = \sum_{i=1}^{k} \frac{\mathbb{1}[\,\text{rel}_i\,]}{\log_2(i+1)}
+\qquad
+\text{nDCG@k} = \frac{\text{DCG@k}}{\text{IDCG@k}}
+$$
+
+```python
+def ndcg_at_k(ranked_ids, relevant_ids, k):
+    relevant = set(relevant_ids)
+    dcg = sum(
+        1.0 / math.log2(i + 1)
+        for i, cid in enumerate(ranked_ids[:k], start=1)
+        if cid in relevant
+    )
+    ideal_hits = min(len(relevant), k)
+    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, ideal_hits + 1))
+    return dcg / idcg if idcg else 0.0
+```
+
+Alongside these sit recall@k, precision@k, and hit-rate@k. Recall and hit-rate
+tell you *whether* the answer was found; MRR and nDCG tell you *how well it was
+ranked*. The distinction matters: a system can saturate recall (find everything)
+and still improve by ranking the right passage higher — which is exactly what
+happens later.
+
+### Gold vs. silver questions
+
+The trusted set is 20 hand-curated questions, each mapped to the chunk that
+answers it — the *gold* set, the source of truth. To scale measurement without
+hand-labelling thousands, a generator prompts an LLM to write a self-contained
+question grounded in a sampled chunk, drops deictic or trivial ones, and keeps
+only answers an LLM-judge rates faithful to their source — a larger *silver* set.
+
+Synthetic questions can flatter the system that generated them, so the two tiers
+are **always reported separately** and gold stays authoritative. Being honest
+about the limits of your own measurement is part of the contract.
+
+### The baseline
+
+The "before" picture: an off-the-shelf multilingual embedding model
+(`intfloat/multilingual-e5-small`), dense-only retrieval, 2024 corpus (2,225
+chunks, 20 questions).
+
+| Recall@10 | Hit rate@10 | MRR | nDCG@10 |
+|---|---|---|---|
+| 0.900 | 0.900 | 0.749 | 0.783 |
+
+Every later change is measured against this row.
+
+## Hybrid retrieval: two ways of being wrong
+
+Dense and sparse retrieval fail differently, and the failures are almost
+complementary:
+
+- **Dense** (embeddings) matches *meaning* — great for paraphrases, weak on rare
+  exact tokens like `Ley 39/2015` or `artículo 14`.
+- **BM25** (lexical) matches *terms* — nails exact references, blind to synonyms.
+
+So the system runs both and fuses them. The sparse leg is a pure-Python Okapi
+BM25 over an inverted index — lightweight enough to run in CI:
+
+$$
+\text{score}(q, d) = \sum_{t \in q} \text{IDF}(t)\cdot
+\frac{f(t,d)\,(k_1 + 1)}{f(t,d) + k_1\!\left(1 - b + b\,\dfrac{|d|}{\text{avgdl}}\right)}
+$$
+
+with $k_1 = 1.5$, $b = 0.75$, and a smoothed IDF
+$\text{IDF}(t) = \ln\!\left(1 + \frac{N - n_t + 0.5}{n_t + 0.5}\right)$. The
+tokenizer is deliberately simple and deterministic — lowercase, split on
+non-alphanumeric boundaries, keep Spanish accents and `ñ`, drop a small stopword
+list — because both the corpus and the questions are properly accented.
+
+### Fusing rankings, not scores
+
+The trick to combining two retrievers is *not* to add their scores — those live
+on incomparable scales. **Reciprocal Rank Fusion** combines *rankings* instead,
+so no normalisation is needed:
+
+$$
+\text{RRF}(d) = \sum_{r \in R} \frac{1}{k_{\text{rrf}} + \text{rank}_r(d)}
+$$
+
+```python
+def reciprocal_rank_fusion(rankings, k_rrf=60):
+    fused = {}
+    for ranking in rankings:
+        for rank, chunk_id in enumerate(ranking, start=1):
+            fused[chunk_id] = fused.get(chunk_id, 0.0) + 1.0 / (k_rrf + rank)
+    return sorted(fused.items(), key=lambda kv: kv[1], reverse=True)
+```
+
+The damping constant $k_{\text{rrf}} = 60$ (Cormack et al., 2009) flattens the
+influence of the very top ranks, so a chunk ranked highly by *either* leg
+surfaces in the fused result. Each leg proposes a candidate pool; RRF merges
+them.
+
+| Retriever | Recall@10 | MRR | nDCG@10 |
+|---|---|---|---|
+| dense (baseline) | 0.900 | 0.749 | 0.783 |
+| BM25 | 0.900 | 0.732 | 0.773 |
+| **hybrid (RRF)** | **0.900** | **0.763** | **0.793** |
+
+Recall is unchanged — it's pinned at a ceiling set by two hard questions both
+legs miss — but hybrid wins on both ranking metrics (MRR +0.014, nDCG +0.010).
+Modest, honest, and pointing straight at the next problem: those two questions
+need a sharper relevance signal.
+
+## Cross-encoder reranking: breaking the ceiling
+
+A bi-encoder (the dense retriever) embeds the query and each passage
+*independently*, then compares vectors — fast, but it can only approximate how
+well they match. A **cross-encoder** reads the query and a passage *together* and
+scores relevance directly. Far sharper, far too slow to run over the whole
+corpus. The standard answer is a two-stage pipeline: retrieve a small pool
+cheaply, then rerank just that pool.
+
+The design keeps the heavy model behind a `Protocol`, so the pipeline logic
+stays testable and model-free:
+
+```python
+class Reranker(Protocol):
+    def rerank(self, query, candidates):  # candidates: (chunk_id, text)
+        """Return the candidates as (chunk_id, score), best first."""
+        ...
+
+class RerankingRetriever:
+    def search(self, query, k=10):
+        pool = max(self._pool, k)                       # e.g. 30 candidates
+        candidates = self._base.search(query, pool)
+        pairs = [(cid, self._id_to_text[cid]) for cid, _ in candidates]
+        return self._reranker.rerank(query, pairs)[:k]
+```
+
+Hybrid retrieves a 30-candidate pool, then
+`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` reorders it (~1.5 s/query on CPU):
+
+| Retriever | Recall@10 | MRR | nDCG@10 |
+|---|---|---|---|
+| dense (baseline) | 0.900 | 0.749 | 0.783 |
+| hybrid (RRF) | 0.900 | 0.763 | 0.793 |
+| **hybrid + cross-encoder** | **1.000** | **0.888** | **0.913** |
+
+This is the satisfying result. The two hard questions *were* in the candidate
+pool all along — retrieval had found them, ranking had buried them. Reading
+query and passage together promotes them into the top 10, breaking the recall
+ceiling **0.900 → 1.000**, with **MRR +0.125 and nDCG +0.120** over hybrid. The
+earlier diagnosis ("they need a sharper signal") was correct, and the fix is
+measured, not assumed.
+
+## Validating the chunking claim
+
+Back to the chunking decision. Article-level chunking *should* beat the
+alternatives — but "should" isn't a measurement. So the corpus is re-chunked
+three ways and scored at **document granularity** (a hit = any chunk from the
+relevant document), so strategies with different boundaries compare fairly:
+
+| Strategy | Recall@10 | MRR | nDCG@10 |
+|---|---|---|---|
+| **article (current)** | 1.000 | **0.975** | **0.982** |
+| fixed-size (1000/150) | 1.000 | 0.912 | 0.935 |
+| whole-document | 1.000 | 0.975 | 0.982 |
+
+Everything is found at this scale, but ranking separates them: **fixed-size
+windows rank the right document lower (MRR −0.063)** because they fragment
+articles mid-thought. Article-level matches whole-document ranking quality —
+*and*, unlike whole-document, it uniquely supports exact article citations. The
+production choice holds up under measurement, and now I can say so with a table
+instead of a hunch.
+
+## Generation: cite, or refuse
+
+Retrieval done, the generator's job is to answer **only** from the retrieved
+passages, cite them as `[n]`, and refuse when the answer isn't there. The system
+prompt is explicit about the refusal string, which makes refusals detectable
+downstream:
+
+```python
+REFUSAL = "No tengo información suficiente para responder."
+# ... system prompt instructs: answer ONLY from the passages, cite sources
+# as [n], and if the answer is absent reply exactly with REFUSAL.
+```
+
+To measure answer quality without a human in the loop, an **LLM-as-judge**
+scores each answer on two axes, each a single call returning a 0–1 score plus a
+short rationale at `temperature=0` for stability:
+
+- **Faithfulness** — is the answer grounded *only* in the retrieved passages?
+- **Correctness** — does it actually match the reference answer?
+
+| Mean faithfulness | Mean correctness | Refusal rate |
+|---|---|---|
+| 0.990 | 0.895 | 0.050 |
+
+Near-perfect faithfulness confirms the cite-or-refuse prompt rarely
+hallucinates. Correctness at 0.895 is the honest headroom — the number future
+retrieval and generation work has to move.
+
+### A provider layer that survives the free tier
+
+Judging and generating burn a lot of LLM calls, and free tiers rate-limit hard.
+So providers sit behind a vendor-agnostic `Protocol`, and a `FallbackProvider`
+chains them with a **time-based circuit breaker**: a rate-limited provider is
+skipped for a cool-down window rather than hammered, but recovers afterwards.
+
+```python
+except LLMRateLimitError as err:
+    self._ready_at[provider.name] = time.monotonic() + self._cooldown
+    rate_limited = True            # skip this provider, try the next
+# ...
+if rate_limited and not other_error:
+    # every provider is cooling down — raise a *distinct* error type so a
+    # long-running caller can back off and retry instead of dying.
+    raise LLMRateLimitError("all providers rate-limited -> " + detail)
+```
+
+The distinct error type is the detail that matters: a bulk eval job can tell
+"out of quota, wait and retry" apart from "genuinely broken" and act
+accordingly. Infrastructure decisions like this are what let the eval set get
+run often enough to be useful.
+
+## Serving: composed from the measured parts, testable without a GPU
+
+The query pipeline is composed behind a single `Engine` protocol — retrieve →
+optionally rerank → generate — and served by FastAPI (`/health`, `/search`,
+`/ask`). Because the HTTP layer depends on the *protocol*, not the concrete
+engine, the API is unit-tested with a trivial fake: **no models, no API keys in
+CI**.
+
+```python
+class Engine(Protocol):
+    @property
+    def num_chunks(self) -> int: ...
+    def search(self, query: str, k: int = 10) -> list[Source]: ...
+    def answer(self, query: str, k: int = 5) -> AnswerResponse: ...
+```
+
+The same engine backs a Gradio chat UI mounted on the same app, so the demo and
+the JSON API can never drift. When the LLM tier is rate-limited, `/ask` degrades
+gracefully to returning the retrieved passages instead of failing — and
+`/search` never needed an LLM in the first place.
+
+This is the same separation-of-concerns idea as the `Reranker` and `LLMProvider`
+protocols: keep the expensive, non-deterministic things behind interfaces, and
+the logic around them stays fast to test and cheap to reason about.
+
+## What the measurements bought
+
+Every headline number traces back to a decision that earned its place:
+
+- **Structure-aware chunking** — +0.063 MRR over fixed-size windows, plus exact
+  citations *for free*.
+- **Hybrid retrieval** — +0.014 MRR / +0.010 nDCG over dense alone.
+- **Cross-encoder reranking** — recall 0.900 → **1.000**, +0.125 MRR.
+- **Cite-or-refuse generation** — 0.990 faithfulness, 0.050 refusal rate.
+
+None of these were taken on faith. The eval harness is the quiet hero of the
+project: it's what turns "this feels better" into "this *is* better, by this
+much, on these questions" — and what will keep the next changes honest too.
+
+## What's next
+
+The roadmap continues to be measurement-gated: fine-tune a Spanish-legal
+embedding model (and prove it beats the off-the-shelf baseline on the same
+set), add citation validation to the generator, deploy a public Hugging Face
+Space, and wire up scheduled incremental ingestion so the index keeps pace with
+each new BOE issue.
+
+---
+
+*The full source — ingestion, eval harness, retrieval, serving — is on*
+*[GitHub](https://github.com/gonzalonao/boe-rag-assistant). See the*
+*[project overview](/projects/boe-rag-assistant) for the plain-language version.*
