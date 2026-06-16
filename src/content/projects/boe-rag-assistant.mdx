@@ -1,7 +1,7 @@
 ---
-title: "BOE RAG Assistant — Eval-Driven RAG over Spanish Legislation"
+title: "BOE RAG Assistant — Answers about Spanish Law, with Receipts"
 subtitle: "Work in progress"
-summary: "A production-grade Retrieval-Augmented Generation system that answers questions about Spanish law with verifiable citations to the BOE, built eval-first: every retrieval and generation change is measured against a golden dataset before it ships."
+summary: "An AI assistant that answers questions about Spanish law and backs every answer with a link to the exact article in the official gazette (BOE). Built measurement-first: each change is tested against a fixed set of questions before it ships."
 date: 2026-06-16
 featured: true
 order: 0
@@ -12,13 +12,23 @@ status: "in-progress"
 
 import Mermaid from '../../components/Mermaid.astro';
 
-## The Problem
+## What it does
 
-Most RAG demos are English-only toys with no measurement story. This one targets a real, daily-updated Spanish legal corpus — the **BOE** (Boletín Oficial del Estado) — and treats retrieval quality as an engineering problem rather than a vibe check. Every answer cites the exact article of the law it comes from, with links back to boe.es.
+Ask a question about Spanish legislation — *"How long does the public administration have to answer a citizen?"* — and the assistant replies in plain language **and cites the exact article it used**, with a link back to the official source on boe.es. No made-up answers: if the law doesn't cover it, it says so instead of guessing.
 
-The guiding principle is **eval-first**: a golden QA dataset and retrieval metrics (recall@k, MRR, nDCG) exist *before* any optimization, and CI blocks merges that regress them. No retrieval or generation change ships without a before/after benchmark.
+The source is the **BOE** (Boletín Oficial del Estado), Spain's official gazette — a huge body of text that grows every single day.
 
-## Architecture
+## Why it's different
+
+Most AI demos that "answer from documents" are impressive until you check them: they sound confident but can't prove where the answer came from, and nobody actually measures whether they're right.
+
+This project takes the opposite approach — **measure first**:
+
+- A fixed set of real legal questions, each with a known correct source, exists **before** any tuning.
+- Every change has to beat the previous version on that test set, or it doesn't ship — the same idea as unit tests, but for answer quality.
+- Every answer points to the specific article it's based on, so a human can verify it in seconds.
+
+## How it works
 
 <Mermaid code={`flowchart TB
   A[BOE Open Data API<br/>sumario + XML] --> B[Ingestion<br/>client · parser · chunker]
@@ -31,57 +41,27 @@ The guiding principle is **eval-first**: a golden QA dataset and retrieval metri
   G --> H[Grounded generation<br/>cite-or-refuse]
   H --> I[Cited answer]`} />
 
-### Structure-aware ingestion
+1. **Collect** the official documents from the BOE's open-data API.
+2. **Split** them the smart way — one piece per legal article, keeping its place in the law (title → chapter → article) so each piece can cite itself precisely.
+3. **Search** for the passages most relevant to your question, combining keyword matching (great for exact references like *"Article 14"*) with meaning-based search (great for paraphrases).
+4. **Re-check** the top candidates with a more careful model that reads the question and each passage together, then keeps the best.
+5. **Answer** using only those passages, adding the citations — or refusing if the answer isn't there.
 
-The ingestion layer turns the BOE Open Data API into a clean, retrieval-ready corpus. A resilient HTTP client (timeouts, polite rate limiting, retry-with-backoff) feeds a parser that flattens the daily *sumario* JSON and parses each document's XML into typed metadata and ordered body blocks. The **chunker walks the legal hierarchy** (título → capítulo → sección → artículo) and emits one chunk per article with its full context — so every passage can cite the exact article it came from. Chunks serialize to Parquet for the Hugging Face Hub.
+## Results so far
 
-## Evaluation
+On the test set, careful retrieval finds the right article for **every** question, and the generated answers stay faithful to the sources **~99% of the time** (they rarely invent anything). Each improvement — better search, smarter re-ranking — was kept only because the numbers said it helped.
 
-The harness scores the retriever against a hand-curated golden set of real Spanish legal questions, each mapped to the chunk that answers it. Metrics are pure-Python and run in CI. Two tiers keep measurement honest: 20 hand-curated *gold* questions are the source of truth, and a larger LLM-generated *silver* set (faithfulness-filtered by an LLM judge) scales coverage — reported separately, since synthetic questions can flatter the system that generated them.
+> 🔧 **Want the engineering detail?** The numbers above come from a full evaluation pipeline. Read the technical deep-dive: [How I built an eval-driven RAG system over Spanish law](/writing/boe-rag-assistant-deep-dive).
 
-**Baseline** — `intfloat/multilingual-e5-small`, dense-only retrieval, 2024 corpus (2,225 chunks, 20 questions):
+## What's next
 
-| Recall@10 | Hit rate@10 | MRR | nDCG@10 |
-|---|---|---|---|
-| 0.900 | 0.900 | 0.749 | 0.783 |
+- ✅ Collect and clean the legal corpus
+- ✅ Build the measurement harness (the "tests" for answer quality)
+- ✅ Improve search and re-ranking, each backed by before/after numbers
+- ✅ Wrap it in a web API and a simple chat demo
+- ⏳ Train a Spanish-legal search model tuned for this corpus
+- ⏳ Public live demo and automatic daily updates as new laws are published
 
-## Retrieval Engineering
+## Tech stack
 
-Sparse and dense retrieval fail differently: BM25 nails exact legal references (`artículo 14`, `Ley 39/2015`) but misses paraphrases; the embedding model matches meaning but misses rare terms. A pure-Python BM25 index is fused with the dense retriever by **Reciprocal Rank Fusion**, then a **cross-encoder** reranks a 30-candidate pool as a sharp second stage.
-
-| Retriever | Recall@10 | Hit rate@10 | MRR | nDCG@10 |
-|---|---|---|---|---|
-| dense (baseline) | 0.900 | 0.900 | 0.749 | 0.783 |
-| BM25 | 0.900 | 0.900 | 0.732 | 0.773 |
-| hybrid (RRF) | 0.900 | 0.900 | 0.763 | 0.793 |
-| **hybrid + cross-encoder** | **1.000** | **1.000** | **0.888** | **0.913** |
-
-Reranking breaks the recall ceiling — **0.900 → 1.000** — by promoting two hard questions that were in the candidate pool but ranked too low, with **MRR +0.125 and nDCG +0.120** over hybrid. A separate chunking ablation validates the production choice: article-level chunks match whole-document ranking quality *and* uniquely support exact article citations, while fixed-size windows rank the right document lower (MRR −0.063) because they fragment articles.
-
-## Grounded Generation
-
-A provider-agnostic LLM layer (Gemini + Groq, with a fallback chain that trips a circuit breaker on a rate-limited provider) powers a cite-or-refuse answerer and an **LLM-as-judge** that scores each answer for faithfulness (grounded in the retrieved passages?) and correctness (matches the reference?).
-
-| Mean faithfulness | Mean correctness | Refusal rate |
-|---|---|---|
-| 0.990 | 0.895 | 0.050 |
-
-Near-perfect faithfulness confirms the cite-or-refuse prompt rarely hallucinates; correctness is the headroom that future retrieval and generation work will target.
-
-## Serving
-
-The measured pipeline — hybrid retrieval → cross-encoder rerank → grounded generation — is composed behind an `Engine` protocol and served by a **FastAPI** app (`/health`, `/search`, `/ask`, with response caching and per-client rate limiting to protect the free LLM tier). The HTTP layer is unit-tested with a fake engine, so CI needs no models or API keys. A **Gradio** chat UI is mounted on the same app and shares one engine, so the demo and the JSON API can never drift; it links each source back to boe.es and degrades gracefully to showing retrieved passages when the LLM tier is rate-limited.
-
-## Roadmap
-
-- ✅ Ingestion pipeline → corpus dataset on HF Hub
-- ✅ Eval harness: retrieval metrics + golden set + LLM-as-judge baseline
-- ✅ Retrieval engineering: hybrid BM25+dense, cross-encoder reranking, chunking ablation
-- ✅ Serving: FastAPI service + Gradio demo UI
-- ⏳ Embedding model fine-tune (Spanish legal domain) → published on HF Hub
-- ⏳ Citation-validated generation
-- ⏳ Hugging Face Space deployment + scheduled incremental ingestion and observability
-
-## Stack
-
-Python · Qdrant (hybrid dense + BM25) · sentence-transformers · ONNX Runtime · FastAPI · Gradio · Hugging Face Hub (datasets, models, Spaces) · RAGAS · Langfuse · GitHub Actions · Ruff · mypy (strict) · pytest.
+Python · Qdrant (keyword + meaning-based search) · sentence-transformers · ONNX Runtime · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — with strict typing and tests throughout.

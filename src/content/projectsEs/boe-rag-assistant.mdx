@@ -1,7 +1,7 @@
 ---
-title: "BOE RAG Assistant — RAG dirigido por evaluación sobre legislación española"
+title: "BOE RAG Assistant — Respuestas sobre derecho español, con pruebas"
 subtitle: "En desarrollo"
-summary: "Un sistema RAG de nivel producción que responde preguntas sobre la legislación española con citas verificables al BOE, construido eval-first: cada cambio en recuperación y generación se mide contra un dataset dorado antes de integrarse."
+summary: "Un asistente de IA que responde preguntas sobre la legislación española y respalda cada respuesta con un enlace al artículo exacto del Boletín Oficial del Estado (BOE). Construido con la medición por delante: cada cambio se prueba contra un conjunto fijo de preguntas antes de integrarse."
 date: 2026-06-16
 featured: true
 order: 0
@@ -12,13 +12,23 @@ status: "in-progress"
 
 import Mermaid from '../../components/Mermaid.astro';
 
-## El problema
+## Qué hace
 
-La mayoría de demos de RAG son juguetes solo en inglés sin ninguna historia de medición. Este apunta a un corpus legal español real y actualizado a diario — el **BOE** (Boletín Oficial del Estado) — y trata la calidad de recuperación como un problema de ingeniería, no como una impresión. Cada respuesta cita el artículo exacto de la ley del que proviene, con enlaces de vuelta a boe.es.
+Haz una pregunta sobre legislación española — *«¿Cuánto tiempo tiene la administración pública para responder a un ciudadano?»* — y el asistente responde en lenguaje claro **y cita el artículo exacto que usó**, con un enlace de vuelta a la fuente oficial en boe.es. Sin respuestas inventadas: si la ley no lo cubre, lo dice en lugar de adivinar.
 
-El principio rector es **eval-first**: un dataset dorado de preguntas/respuestas y métricas de recuperación (recall@k, MRR, nDCG) existen *antes* de cualquier optimización, y CI bloquea los merges que las degraden. Ningún cambio de recuperación o generación se integra sin una tabla de benchmark antes/después.
+La fuente es el **BOE** (Boletín Oficial del Estado), el diario oficial de España — un volumen enorme de texto que crece cada día.
 
-## Arquitectura
+## Por qué es diferente
+
+La mayoría de las demos de IA que «responden a partir de documentos» impresionan hasta que las compruebas: suenan seguras pero no pueden demostrar de dónde sale la respuesta, y nadie mide de verdad si aciertan.
+
+Este proyecto hace lo contrario — **medir primero**:
+
+- Un conjunto fijo de preguntas legales reales, cada una con su fuente correcta conocida, existe **antes** de cualquier ajuste.
+- Cada cambio tiene que superar a la versión anterior en ese conjunto, o no se integra — la misma idea que los tests unitarios, pero para la calidad de las respuestas.
+- Cada respuesta apunta al artículo concreto en el que se basa, para que una persona pueda verificarlo en segundos.
+
+## Cómo funciona
 
 <Mermaid code={`flowchart TB
   A[API BOE Open Data<br/>sumario + XML] --> B[Ingesta<br/>client · parser · chunker]
@@ -31,57 +41,27 @@ El principio rector es **eval-first**: un dataset dorado de preguntas/respuestas
   G --> H[Generación anclada<br/>citar-o-rechazar]
   H --> I[Respuesta citada]`} />
 
-### Ingesta sensible a la estructura
+1. **Recopilar** los documentos oficiales desde la API de datos abiertos del BOE.
+2. **Trocear** de forma inteligente — una pieza por artículo legal, conservando su lugar en la ley (título → capítulo → artículo) para que cada pieza pueda citarse con precisión.
+3. **Buscar** los pasajes más relevantes para tu pregunta, combinando búsqueda por palabras clave (ideal para referencias exactas como *«artículo 14»*) con búsqueda por significado (ideal para paráfrasis).
+4. **Reverificar** los mejores candidatos con un modelo más cuidadoso que lee juntas la pregunta y cada pasaje, y se queda con los mejores.
+5. **Responder** usando solo esos pasajes, añadiendo las citas — o rechazar si la respuesta no está.
 
-La capa de ingesta convierte la API BOE Open Data en un corpus limpio y listo para recuperación. Un cliente HTTP resiliente (timeouts, rate limiting cortés, reintentos con backoff) alimenta un parser que aplana el *sumario* diario en JSON y parsea el XML de cada documento en metadatos tipados y bloques de cuerpo ordenados. El **chunker recorre la jerarquía legal** (título → capítulo → sección → artículo) y emite un chunk por artículo con su contexto completo — de modo que cada pasaje puede citar el artículo exacto del que procede. Los chunks se serializan a Parquet para el Hugging Face Hub.
+## Resultados hasta ahora
 
-## Evaluación
+En el conjunto de prueba, la recuperación cuidadosa encuentra el artículo correcto para **todas** las preguntas, y las respuestas generadas se mantienen fieles a las fuentes **~99% de las veces** (rara vez inventan algo). Cada mejora — mejor búsqueda, reordenación más fina — se conservó solo porque los números decían que ayudaba.
 
-El harness puntúa el recuperador contra un conjunto dorado de preguntas legales españolas reales, curadas a mano, cada una mapeada al chunk que la responde. Las métricas son Python puro y corren en CI. Dos niveles mantienen la medición honesta: 20 preguntas *gold* curadas a mano son la fuente de verdad, y un conjunto *silver* mayor generado por LLM (filtrado por fidelidad mediante un LLM juez) escala la cobertura — reportado por separado, ya que las preguntas sintéticas pueden favorecer al sistema que las generó.
+> 🔧 **¿Quieres el detalle de ingeniería?** Los números de arriba salen de una completa tubería de evaluación. Lee el análisis técnico en profundidad: [Cómo construí un sistema RAG dirigido por evaluación sobre el derecho español](/es/writing/boe-rag-assistant-deep-dive).
 
-**Baseline** — `intfloat/multilingual-e5-small`, recuperación solo densa, corpus 2024 (2.225 chunks, 20 preguntas):
+## Qué viene
 
-| Recall@10 | Hit rate@10 | MRR | nDCG@10 |
-|---|---|---|---|
-| 0.900 | 0.900 | 0.749 | 0.783 |
-
-## Ingeniería de recuperación
-
-La recuperación dispersa y densa fallan de forma distinta: BM25 acierta las referencias legales exactas (`artículo 14`, `Ley 39/2015`) pero pierde paráfrasis; el modelo de embeddings capta el significado pero pierde términos raros. Un índice BM25 en Python puro se fusiona con el recuperador denso mediante **Reciprocal Rank Fusion**, y después un **cross-encoder** reordena un pool de 30 candidatos como una segunda etapa más afilada.
-
-| Recuperador | Recall@10 | Hit rate@10 | MRR | nDCG@10 |
-|---|---|---|---|---|
-| denso (baseline) | 0.900 | 0.900 | 0.749 | 0.783 |
-| BM25 | 0.900 | 0.900 | 0.732 | 0.773 |
-| híbrido (RRF) | 0.900 | 0.900 | 0.763 | 0.793 |
-| **híbrido + cross-encoder** | **1.000** | **1.000** | **0.888** | **0.913** |
-
-El reranking rompe el techo de recall — **0.900 → 1.000** — promoviendo dos preguntas difíciles que estaban en el pool de candidatos pero rankeadas demasiado bajo, con **MRR +0.125 y nDCG +0.120** sobre el híbrido. Una ablación de chunking aparte valida la elección de producción: los chunks a nivel de artículo igualan la calidad de ranking del documento completo *y* soportan de forma única las citas exactas de artículo, mientras que las ventanas de tamaño fijo rankean el documento correcto más abajo (MRR −0.063) porque fragmentan los artículos.
-
-## Generación anclada
-
-Una capa LLM agnóstica al proveedor (Gemini + Groq, con una cadena de fallback que activa un circuit breaker ante un proveedor con rate limit) impulsa un generador citar-o-rechazar y un **LLM-as-judge** que puntúa cada respuesta en fidelidad (¿anclada en los pasajes recuperados?) y corrección (¿coincide con la referencia?).
-
-| Fidelidad media | Corrección media | Tasa de rechazo |
-|---|---|---|
-| 0.990 | 0.895 | 0.050 |
-
-La fidelidad casi perfecta confirma que el prompt citar-o-rechazar rara vez alucina; la corrección es el margen de mejora al que apuntará el trabajo futuro de recuperación y generación.
-
-## Servicio
-
-El pipeline medido — recuperación híbrida → rerank cross-encoder → generación anclada — se compone tras un protocolo `Engine` y se sirve mediante una app **FastAPI** (`/health`, `/search`, `/ask`, con caché de respuestas y rate limiting por cliente para proteger el tier gratuito del LLM). La capa HTTP se testea con un engine falso, así que CI no necesita modelos ni API keys. Una UI de chat en **Gradio** se monta sobre la misma app y comparte un único engine, de modo que la demo y la API JSON nunca pueden divergir; enlaza cada fuente de vuelta a boe.es y degrada con elegancia mostrando los pasajes recuperados cuando el tier del LLM está limitado.
-
-## Hoja de ruta
-
-- ✅ Pipeline de ingesta → dataset de corpus en HF Hub
-- ✅ Harness de evaluación: métricas de recuperación + conjunto dorado + baseline con LLM-as-judge
-- ✅ Ingeniería de recuperación: híbrido BM25+denso, reranking cross-encoder, ablación de chunking
-- ✅ Servicio: API FastAPI + UI demo en Gradio
-- ⏳ Fine-tune del modelo de embeddings (dominio legal español) → publicado en HF Hub
-- ⏳ Generación con validación de citas
-- ⏳ Despliegue en Hugging Face Space + ingesta incremental programada y observabilidad
+- ✅ Recopilar y limpiar el corpus legal
+- ✅ Construir el arnés de medición (los «tests» de la calidad de respuesta)
+- ✅ Mejorar la búsqueda y la reordenación, cada una respaldada por números antes/después
+- ✅ Envolverlo en una API web y una demo de chat sencilla
+- ⏳ Entrenar un modelo de búsqueda jurídico-español afinado para este corpus
+- ⏳ Demo pública en vivo y actualizaciones diarias automáticas según se publican nuevas leyes
 
 ## Stack
 
-Python · Qdrant (híbrido denso + BM25) · sentence-transformers · ONNX Runtime · FastAPI · Gradio · Hugging Face Hub (datasets, modelos, Spaces) · RAGAS · Langfuse · GitHub Actions · Ruff · mypy (estricto) · pytest.
+Python · Qdrant (búsqueda por palabras clave + por significado) · sentence-transformers · ONNX Runtime · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — con tipado estricto y tests por todas partes.
