@@ -28,6 +28,7 @@ export const t = {
     nav: {
       home: 'Home',
       projects: 'Projects',
+      writing: 'Writing',
       education: 'Education',
       contact: 'Contact',
       toggleLang: 'Español',
@@ -98,6 +99,20 @@ export const t = {
       title: 'Projects',
       intro: 'A selection of recent case studies — from investing automation to graph-based ML and end-to-end BI pipelines.',
     },
+    writingPage: {
+      title: 'Writing',
+      intro: 'Technical deep-dives and engineering notes from my projects — the design decisions, trade-offs, and measurements behind the work.',
+      empty: 'No articles yet — check back soon.',
+    },
+    article: {
+      breadcrumbWriting: 'Writing',
+      tableOfContents: 'On this page',
+      backToWriting: '← Back to all writing',
+      prev: 'Previous',
+      next: 'Next',
+      relatedProject: 'Related project',
+      readTime: 'min read',
+    },
     education: {
       title: 'Education',
       intro: 'A blend of formal mathematics, peer-to-peer systems engineering at 42, and an industry-flavored Master\'s in Big Data & AI.',
@@ -122,6 +137,7 @@ export const t = {
     nav: {
       home: 'Inicio',
       projects: 'Proyectos',
+      writing: 'Artículos',
       education: 'Formación',
       contact: 'Contacto',
       toggleLang: 'English',
@@ -191,6 +207,20 @@ export const t = {
     projectsPage: {
       title: 'Proyectos',
       intro: 'Una selección de casos de estudio recientes — desde automatización de inversión hasta ML con grafos y pipelines BI de punta a punta.',
+    },
+    writingPage: {
+      title: 'Artículos',
+      intro: 'Análisis técnicos en profundidad y notas de ingeniería de mis proyectos — las decisiones de diseño, los compromisos y las mediciones detrás del trabajo.',
+      empty: 'Aún no hay artículos — vuelve pronto.',
+    },
+    article: {
+      breadcrumbWriting: 'Artículos',
+      tableOfContents: 'En esta página',
+      backToWriting: '← Volver a todos los artículos',
+      prev: 'Anterior',
+      next: 'Siguiente',
+      relatedProject: 'Proyecto relacionado',
+      readTime: 'min de lectura',
     },
     education: {
       title: 'Formación',
