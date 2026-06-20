@@ -5,8 +5,9 @@ summary: "Un asistente de IA que responde preguntas sobre la legislación españ
 date: 2026-06-16
 featured: true
 order: 0
-tags: ["Python", "RAG", "Qdrant", "FastAPI", "Gradio", "Hugging Face", "Evals"]
+tags: ["Python", "RAG", "Hybrid Retrieval", "FastAPI", "Gradio", "Hugging Face", "Evals"]
 githubUrl: "https://github.com/gonzalonao/boe-rag-assistant"
+liveDemoUrl: "https://huggingface.co/spaces/gonzalonao/boe-rag-assistant"
 status: "in-progress"
 ---
 
@@ -34,10 +35,10 @@ Este proyecto hace lo contrario — **medir primero**:
   A[API BOE Open Data<br/>sumario + XML] --> B[Ingesta<br/>client · parser · chunker]
   B --> C[Chunks por estructura<br/>uno por artículo]
   C --> D[(Dataset HF<br/>corpus)]
-  C --> E[(Índice híbrido<br/>Qdrant: dense + BM25)]
-  Q[Consulta] --> F[Recuperación híbrida]
+  C --> E[(Índice híbrido<br/>dense + BM25)]
+  Q[Consulta] --> F[Recuperación híbrida<br/>RRF]
   E --> F
-  F --> G[Rerank cross-encoder<br/>ONNX]
+  F --> G[Rerank cross-encoder]
   G --> H[Generación anclada<br/>citar-o-rechazar]
   H --> I[Respuesta citada]`} />
 
@@ -59,9 +60,10 @@ En el conjunto de prueba, la recuperación cuidadosa encuentra el artículo corr
 - ✅ Construir el arnés de medición (los «tests» de la calidad de respuesta)
 - ✅ Mejorar la búsqueda y la reordenación, cada una respaldada por números antes/después
 - ✅ Envolverlo en una API web y una demo de chat sencilla
+- ✅ Publicar una demo pública en vivo (Hugging Face Space)
 - ⏳ Entrenar un modelo de búsqueda jurídico-español afinado para este corpus
-- ⏳ Demo pública en vivo y actualizaciones diarias automáticas según se publican nuevas leyes
+- ⏳ Actualizaciones diarias automáticas según se publican nuevas leyes
 
 ## Stack
 
-Python · Qdrant (búsqueda por palabras clave + por significado) · sentence-transformers · ONNX Runtime · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — con tipado estricto y tests por todas partes.
+Python · sentence-transformers (E5 multilingüe) · BM25 en Python puro + fusión RRF · reranker cross-encoder · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — con tipado estricto y tests por todas partes.

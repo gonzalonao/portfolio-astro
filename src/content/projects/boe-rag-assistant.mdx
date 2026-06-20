@@ -5,8 +5,9 @@ summary: "An AI assistant that answers questions about Spanish law and backs eve
 date: 2026-06-16
 featured: true
 order: 0
-tags: ["Python", "RAG", "Qdrant", "FastAPI", "Gradio", "Hugging Face", "Evals"]
+tags: ["Python", "RAG", "Hybrid Retrieval", "FastAPI", "Gradio", "Hugging Face", "Evals"]
 githubUrl: "https://github.com/gonzalonao/boe-rag-assistant"
+liveDemoUrl: "https://huggingface.co/spaces/gonzalonao/boe-rag-assistant"
 status: "in-progress"
 ---
 
@@ -34,10 +35,10 @@ This project takes the opposite approach — **measure first**:
   A[BOE Open Data API<br/>sumario + XML] --> B[Ingestion<br/>client · parser · chunker]
   B --> C[Structure-aware chunks<br/>one per article]
   C --> D[(HF dataset<br/>corpus)]
-  C --> E[(Hybrid index<br/>Qdrant: dense + BM25)]
-  Q[Query] --> F[Hybrid retrieval]
+  C --> E[(Hybrid index<br/>dense + BM25)]
+  Q[Query] --> F[Hybrid retrieval<br/>RRF]
   E --> F
-  F --> G[Cross-encoder rerank<br/>ONNX]
+  F --> G[Cross-encoder rerank]
   G --> H[Grounded generation<br/>cite-or-refuse]
   H --> I[Cited answer]`} />
 
@@ -59,9 +60,10 @@ On the test set, careful retrieval finds the right article for **every** questio
 - ✅ Build the measurement harness (the "tests" for answer quality)
 - ✅ Improve search and re-ranking, each backed by before/after numbers
 - ✅ Wrap it in a web API and a simple chat demo
+- ✅ Ship a public live demo (Hugging Face Space)
 - ⏳ Train a Spanish-legal search model tuned for this corpus
-- ⏳ Public live demo and automatic daily updates as new laws are published
+- ⏳ Automatic daily updates as new laws are published
 
 ## Tech stack
 
-Python · Qdrant (keyword + meaning-based search) · sentence-transformers · ONNX Runtime · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — with strict typing and tests throughout.
+Python · sentence-transformers (multilingual E5) · pure-Python BM25 + RRF fusion · cross-encoder reranker · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — with strict typing and tests throughout.

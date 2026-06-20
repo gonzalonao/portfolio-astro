@@ -379,11 +379,14 @@ cambios.
 
 ## Qué viene
 
-La hoja de ruta sigue condicionada a la medición: afinar un modelo de embeddings
-jurídico-español (y demostrar que supera a la línea base estándar sobre el mismo
-conjunto), añadir validación de citas al generador, desplegar un Hugging Face
-Space público y montar una ingesta incremental programada para que el índice siga
-el ritmo de cada nuevo número del BOE.
+El sistema está **en producción en un Hugging Face Space público** (FastAPI +
+Gradio, respuestas citadas), con una verja de regresión de evaluación en CI y
+trazado opcional con Langfuse ya integrados. La hoja de ruta sigue condicionada a
+la medición: afinar un modelo de embeddings jurídico-español (y demostrar que
+supera a la línea base estándar sobre el mismo conjunto), añadir validación de
+citas al generador, ampliar el corpus más allá de 2024 y montar una ingesta
+incremental programada para que el índice siga el ritmo de cada nuevo número del
+BOE.
 
 ---
 
