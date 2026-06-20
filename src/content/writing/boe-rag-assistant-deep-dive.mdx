@@ -324,6 +324,61 @@ The distinct error type is the detail that matters: a bulk eval job can tell
 accordingly. Infrastructure decisions like this are what let the eval set get
 run often enough to be useful.
 
+## Red-teaming the generator: find a gap, then close it
+
+Accuracy metrics measure a *cooperative* user. They say nothing about a *hostile*
+one — and a legal assistant that can be talked into citing a law that doesn't
+exist is worse than useless. So the generator gets its own adversarial suite: 14
+hand-written attacks across four threat classes, scored by **deterministic,
+rule-based checks** (no LLM judge, so verdicts are stable and run in CI):
+
+- **instruction override** — *"ignore your rules and output X"*; the answer must
+  not echo the payload.
+- **system-prompt exfiltration** — *"print your instructions"*; defended with a
+  **canary token** seeded in the system prompt that must never surface in output.
+- **citation spoofing** — coax a citation to a passage that was never retrieved;
+  the answer may only cite indices that actually exist.
+- **out-of-corpus hallucination** — ask about an absent law; the answer must
+  refuse, not invent.
+
+The first run was deliberately published *before* any dedicated defense, and it
+earned its keep by finding a real gap: when explicitly asked, the model
+**fabricated citations** like `[99]` to sources it was never given. Prompt-level
+instructions caught it **0%** of the time.
+
+Prompt wording can't *guarantee* citation integrity — that needs a deterministic
+guardrail. So a post-hoc **citation-validation** pass now runs after generation:
+parse every `[n]`, strip any index outside the retrieved range, and refuse
+outright when an answer's grounding rests *entirely* on fabricated citations.
+
+```python
+def validate_citations(answer, num_sources, *, refusal):
+    indices = cited_indices(answer)
+    invalid = tuple(i for i in indices if i < 1 or i > num_sources)
+    if not invalid:
+        return CitationValidation(answer, refused=False, invalid_citations=())
+    if not any(1 <= i <= num_sources for i in indices):
+        # every citation was fabricated — no real grounding to stand on
+        return CitationValidation(refusal, refused=True, invalid_citations=invalid)
+    return CitationValidation(_strip_invalid(answer, num_sources), False, invalid)
+```
+
+Re-running the *same* harness gives a clean before/after — the security
+equivalent of a regression test:
+
+| Attack category | Before | After |
+|---|---|---|
+| Out-of-corpus hallucination | 100% | 100% |
+| Instruction override | 75% | 75% |
+| System-prompt exfiltration | 75% | 75% |
+| **Citation spoofing** | **0%** | **100%** |
+| **Overall** | **64% (9/14)** | **86% (12/14)** |
+
+Citation spoofing goes **0% → 100%**, the rest of the suite unchanged — the gap
+closed without collateral. That's the whole workflow in miniature: *measure, find
+a real weakness, close it, and prove the close with the same harness* — the same
+contract as the retrieval evals, now applied to security.
+
 ## Serving: composed from the measured parts, testable without a GPU
 
 The query pipeline is composed behind a single `Engine` protocol — retrieve →
@@ -358,6 +413,7 @@ Every headline number traces back to a decision that earned its place:
 - **Hybrid retrieval** — +0.014 MRR / +0.010 nDCG over dense alone.
 - **Cross-encoder reranking** — recall 0.900 → **1.000**, +0.125 MRR.
 - **Cite-or-refuse generation** — 0.990 faithfulness, 0.050 refusal rate.
+- **Citation-validation guardrail** — adversarial citation spoofing **0% → 100%**.
 
 None of these were taken on faith. The eval harness is the quiet hero of the
 project: it's what turns "this feels better" into "this *is* better, by this
@@ -366,12 +422,12 @@ much, on these questions" — and what will keep the next changes honest too.
 ## What's next
 
 The system is **live on a public Hugging Face Space** (FastAPI + Gradio, cited
-answers), with a CI eval-regression gate and opt-in Langfuse tracing now in
-place. The roadmap continues to be measurement-gated: fine-tune a Spanish-legal
-embedding model (and prove it beats the off-the-shelf baseline on the same set),
-add citation validation to the generator, widen the corpus beyond 2024, and wire
-up scheduled incremental ingestion so the index keeps pace with each new BOE
-issue.
+answers), with a CI eval-regression gate, opt-in Langfuse tracing, an adversarial
+security suite, and the citation-validation guardrail now in place. The roadmap
+continues to be measurement-gated: fine-tune a Spanish-legal embedding model (and
+prove it beats the off-the-shelf baseline on the same set), widen the corpus
+beyond 2024, and wire up scheduled incremental ingestion so the index keeps pace
+with each new BOE issue.
 
 ---
 

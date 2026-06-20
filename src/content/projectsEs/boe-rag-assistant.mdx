@@ -54,6 +54,10 @@ En el conjunto de prueba, la recuperación cuidadosa encuentra el artículo corr
 
 > 🔧 **¿Quieres el detalle de ingeniería?** Los números de arriba salen de una completa tubería de evaluación. Lee el análisis técnico en profundidad: [Cómo construí un sistema RAG dirigido por evaluación sobre el derecho español](/es/writing/boe-rag-assistant-deep-dive).
 
+## Diseñado para resistir el mal uso
+
+Un asistente jurídico al que se puede *engañar* para que cite una ley que no existe es peor que no tener asistente. Por eso también se prueba contra personas que intentan romperlo — intentos de hacer que ignore sus reglas, filtre sus instrucciones o invente citas. Una de esas pruebas detectó un problema real: presionado, el modelo citaba una fuente que en realidad nunca había leído. Añadí una comprobación que detecta y elimina esas citas falsas antes de que la respuesta llegue al usuario — cerrando por completo esa debilidad concreta sin afectar a lo demás. El mismo bucle de «medir, encontrar el fallo, corregirlo, demostrarlo» que se usa para la precisión, aplicado a la seguridad.
+
 ## Qué viene
 
 - ✅ Recopilar y limpiar el corpus legal
@@ -61,6 +65,7 @@ En el conjunto de prueba, la recuperación cuidadosa encuentra el artículo corr
 - ✅ Mejorar la búsqueda y la reordenación, cada una respaldada por números antes/después
 - ✅ Envolverlo en una API web y una demo de chat sencilla
 - ✅ Publicar una demo pública en vivo (Hugging Face Space)
+- ✅ Probarlo a fondo frente a usuarios hostiles y reforzar los puntos débiles
 - ⏳ Entrenar un modelo de búsqueda jurídico-español afinado para este corpus
 - ⏳ Actualizaciones diarias automáticas según se publican nuevas leyes
 

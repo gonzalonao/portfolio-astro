@@ -54,6 +54,10 @@ On the test set, careful retrieval finds the right article for **every** questio
 
 > 🔧 **Want the engineering detail?** The numbers above come from a full evaluation pipeline. Read the technical deep-dive: [How I built an eval-driven RAG system over Spanish law](/writing/boe-rag-assistant-deep-dive).
 
+## Built to resist misuse
+
+A legal assistant that can be *tricked* into citing a law that doesn't exist is worse than no assistant at all. So it's also tested against people trying to break it — attempts to make it ignore its rules, leak its instructions, or invent citations. One of those tests caught a real problem: when pushed, the model would cite a source it never actually read. I added a check that catches and removes those fake citations before the answer ever reaches you — closing that specific weakness completely while leaving everything else working. The same "measure, find the flaw, fix it, prove it" loop used for accuracy, applied to safety.
+
 ## What's next
 
 - ✅ Collect and clean the legal corpus
@@ -61,6 +65,7 @@ On the test set, careful retrieval finds the right article for **every** questio
 - ✅ Improve search and re-ranking, each backed by before/after numbers
 - ✅ Wrap it in a web API and a simple chat demo
 - ✅ Ship a public live demo (Hugging Face Space)
+- ✅ Stress-test it against hostile users and harden the weak spots
 - ⏳ Train a Spanish-legal search model tuned for this corpus
 - ⏳ Automatic daily updates as new laws are published
 

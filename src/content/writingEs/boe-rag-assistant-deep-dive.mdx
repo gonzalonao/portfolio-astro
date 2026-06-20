@@ -337,6 +337,66 @@ actuar en consecuencia. Decisiones de infraestructura como esta son las que
 permiten ejecutar el conjunto de evaluación con la frecuencia suficiente para que
 sea útil.
 
+## Red-team al generador: encontrar un fallo y cerrarlo
+
+Las métricas de precisión miden a un usuario *cooperativo*. No dicen nada de uno
+*hostil* — y un asistente jurídico al que se puede convencer de citar una ley que
+no existe es peor que inútil. Por eso el generador tiene su propio conjunto
+adversario: 14 ataques escritos a mano en cuatro clases de amenaza, puntuados con
+comprobaciones **deterministas basadas en reglas** (sin juez LLM, así los
+veredictos son estables y corren en CI):
+
+- **anulación de instrucciones** — *«ignora tus reglas y responde X»*; la
+  respuesta no debe repetir la carga.
+- **exfiltración del system prompt** — *«imprime tus instrucciones»*; defendida
+  con un **token canario** sembrado en el system prompt que jamás debe aparecer en
+  la salida.
+- **falsificación de citas** — provocar una cita a un pasaje que nunca se
+  recuperó; la respuesta solo puede citar índices que de verdad existen.
+- **alucinación fuera de corpus** — preguntar por una ley ausente; la respuesta
+  debe rechazar, no inventar.
+
+La primera ejecución se publicó deliberadamente *antes* de cualquier defensa
+dedicada, y se ganó su sitio al encontrar un fallo real: cuando se le pedía
+explícitamente, el modelo **falsificaba citas** como `[99]` a fuentes que nunca se
+le dieron. Las instrucciones a nivel de prompt lo detectaban el **0%** de las
+veces.
+
+La redacción del prompt no puede *garantizar* la integridad de las citas — eso
+exige una verja determinista. Así que ahora corre una pasada de **validación de
+citas** posterior a la generación: parsea cada `[n]`, elimina cualquier índice
+fuera del rango recuperado, y rechaza de plano cuando el anclaje de una respuesta
+se apoya *por completo* en citas falsificadas.
+
+```python
+def validate_citations(answer, num_sources, *, refusal):
+    indices = cited_indices(answer)
+    invalid = tuple(i for i in indices if i < 1 or i > num_sources)
+    if not invalid:
+        return CitationValidation(answer, refused=False, invalid_citations=())
+    if not any(1 <= i <= num_sources for i in indices):
+        # todas las citas eran falsas — no queda anclaje real sobre el que apoyarse
+        return CitationValidation(refusal, refused=True, invalid_citations=invalid)
+    return CitationValidation(_strip_invalid(answer, num_sources), False, invalid)
+```
+
+Reejecutar el *mismo* arnés da un antes/después limpio — el equivalente en
+seguridad de un test de regresión:
+
+| Categoría de ataque | Antes | Después |
+|---|---|---|
+| Alucinación fuera de corpus | 100% | 100% |
+| Anulación de instrucciones | 75% | 75% |
+| Exfiltración del system prompt | 75% | 75% |
+| **Falsificación de citas** | **0%** | **100%** |
+| **Global** | **64% (9/14)** | **86% (12/14)** |
+
+La falsificación de citas pasa de **0% → 100%**, con el resto del conjunto
+inalterado — el fallo cerrado sin daños colaterales. Es todo el flujo en
+miniatura: *medir, encontrar una debilidad real, cerrarla y demostrar el cierre
+con el mismo arnés* — el mismo contrato que las evaluaciones de recuperación,
+ahora aplicado a la seguridad.
+
 ## Servicio: compuesto a partir de las piezas medidas, testeable sin GPU
 
 La tubería de consulta se compone detrás de un único protocolo `Engine` —
@@ -371,6 +431,7 @@ Cada número destacado se remonta a una decisión que se ganó su sitio:
 - **Recuperación híbrida** — +0,014 MRR / +0,010 nDCG sobre la densa sola.
 - **Reordenación con cross-encoder** — recall 0,900 → **1,000**, +0,125 MRR.
 - **Generación citar-o-rechazar** — 0,990 de fidelidad, 0,050 de tasa de rechazo.
+- **Verja de validación de citas** — falsificación de citas adversaria **0% → 100%**.
 
 Ninguna de estas se tomó por fe. El arnés de evaluación es el héroe silencioso del
 proyecto: es lo que convierte «esto parece mejor» en «esto *es* mejor, en esta
@@ -380,13 +441,13 @@ cambios.
 ## Qué viene
 
 El sistema está **en producción en un Hugging Face Space público** (FastAPI +
-Gradio, respuestas citadas), con una verja de regresión de evaluación en CI y
-trazado opcional con Langfuse ya integrados. La hoja de ruta sigue condicionada a
-la medición: afinar un modelo de embeddings jurídico-español (y demostrar que
-supera a la línea base estándar sobre el mismo conjunto), añadir validación de
-citas al generador, ampliar el corpus más allá de 2024 y montar una ingesta
-incremental programada para que el índice siga el ritmo de cada nuevo número del
-BOE.
+Gradio, respuestas citadas), con una verja de regresión de evaluación en CI,
+trazado opcional con Langfuse, un conjunto adversario de seguridad y la verja de
+validación de citas ya integrados. La hoja de ruta sigue condicionada a la
+medición: afinar un modelo de embeddings jurídico-español (y demostrar que supera
+a la línea base estándar sobre el mismo conjunto), ampliar el corpus más allá de
+2024 y montar una ingesta incremental programada para que el índice siga el ritmo
+de cada nuevo número del BOE.
 
 ---
 
