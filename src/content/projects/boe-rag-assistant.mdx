@@ -1,0 +1,74 @@
+---
+title: "BOE RAG Assistant — Answers about Spanish Law, with Receipts"
+subtitle: "Work in progress"
+summary: "An AI assistant that answers questions about Spanish law and backs every answer with a link to the exact article in the official gazette (BOE). Built measurement-first: each change is tested against a fixed set of questions before it ships."
+date: 2026-06-16
+featured: true
+order: 0
+tags: ["Python", "RAG", "Hybrid Retrieval", "FastAPI", "Gradio", "Hugging Face", "Evals"]
+githubUrl: "https://github.com/gonzalonao/boe-rag-assistant"
+liveDemoUrl: "https://huggingface.co/spaces/gonzalonao/boe-rag-assistant"
+status: "in-progress"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## What it does
+
+Ask a question about Spanish legislation — *"How long does the public administration have to answer a citizen?"* — and the assistant replies in plain language **and cites the exact article it used**, with a link back to the official source on boe.es. No made-up answers: if the law doesn't cover it, it says so instead of guessing.
+
+The source is the **BOE** (Boletín Oficial del Estado), Spain's official gazette — a huge body of text that grows every single day.
+
+## Why it's different
+
+Most AI demos that "answer from documents" are impressive until you check them: they sound confident but can't prove where the answer came from, and nobody actually measures whether they're right.
+
+This project takes the opposite approach — **measure first**:
+
+- A fixed set of real legal questions, each with a known correct source, exists **before** any tuning.
+- Every change has to beat the previous version on that test set, or it doesn't ship — the same idea as unit tests, but for answer quality.
+- Every answer points to the specific article it's based on, so a human can verify it in seconds.
+
+## How it works
+
+<Mermaid code={`flowchart TB
+  A[BOE Open Data API<br/>sumario + XML] --> B[Ingestion<br/>client · parser · chunker]
+  B --> C[Structure-aware chunks<br/>one per article]
+  C --> D[(HF dataset<br/>corpus)]
+  C --> E[(Hybrid index<br/>dense + BM25)]
+  Q[Query] --> F[Hybrid retrieval<br/>RRF]
+  E --> F
+  F --> G[Cross-encoder rerank]
+  G --> H[Grounded generation<br/>cite-or-refuse]
+  H --> I[Cited answer]`} />
+
+1. **Collect** the official documents from the BOE's open-data API.
+2. **Split** them the smart way — one piece per legal article, keeping its place in the law (title → chapter → article) so each piece can cite itself precisely.
+3. **Search** for the passages most relevant to your question, combining keyword matching (great for exact references like *"Article 14"*) with meaning-based search (great for paraphrases).
+4. **Re-check** the top candidates with a more careful model that reads the question and each passage together, then keeps the best.
+5. **Answer** using only those passages, adding the citations — or refusing if the answer isn't there.
+
+## Results so far
+
+On the test set, careful retrieval finds the right article for **every** question, and the generated answers stay faithful to the sources **~99% of the time** (they rarely invent anything). Each improvement — better search, smarter re-ranking — was kept only because the numbers said it helped.
+
+> 🔧 **Want the engineering detail?** The numbers above come from a full evaluation pipeline. Read the technical deep-dive: [How I built an eval-driven RAG system over Spanish law](/writing/boe-rag-assistant-deep-dive).
+
+## Built to resist misuse
+
+A legal assistant that can be *tricked* into citing a law that doesn't exist is worse than no assistant at all. So it's also tested against people trying to break it — attempts to make it ignore its rules, leak its instructions, or invent citations. One of those tests caught a real problem: when pushed, the model would cite a source it never actually read. I added a check that catches and removes those fake citations before the answer ever reaches you — closing that specific weakness completely while leaving everything else working. The same "measure, find the flaw, fix it, prove it" loop used for accuracy, applied to safety.
+
+## What's next
+
+- ✅ Collect and clean the legal corpus
+- ✅ Build the measurement harness (the "tests" for answer quality)
+- ✅ Improve search and re-ranking, each backed by before/after numbers
+- ✅ Wrap it in a web API and a simple chat demo
+- ✅ Ship a public live demo (Hugging Face Space)
+- ✅ Stress-test it against hostile users and harden the weak spots
+- ⏳ Train a Spanish-legal search model tuned for this corpus
+- ⏳ Automatic daily updates as new laws are published
+
+## Tech stack
+
+Python · sentence-transformers (multilingual E5) · pure-Python BM25 + RRF fusion · cross-encoder reranker · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — with strict typing and tests throughout.

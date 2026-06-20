@@ -24,4 +24,25 @@ const projectsEs = defineCollection({
   schema: projectSchema,
 });
 
-export const collections = { projects, projectsEs };
+const articleSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  date: z.coerce.date(),
+  readingMinutes: z.number().default(10),
+  tags: z.array(z.string()).default([]),
+  // Slug of the related project (links the article back to its case study).
+  project: z.string().optional(),
+  draft: z.boolean().default(false),
+});
+
+const writing = defineCollection({
+  type: 'content',
+  schema: articleSchema,
+});
+
+const writingEs = defineCollection({
+  type: 'content',
+  schema: articleSchema,
+});
+
+export const collections = { projects, projectsEs, writing, writingEs };

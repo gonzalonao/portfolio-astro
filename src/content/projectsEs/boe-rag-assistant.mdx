@@ -1,0 +1,74 @@
+---
+title: "BOE RAG Assistant — Respuestas sobre derecho español, con pruebas"
+subtitle: "En desarrollo"
+summary: "Un asistente de IA que responde preguntas sobre la legislación española y respalda cada respuesta con un enlace al artículo exacto del Boletín Oficial del Estado (BOE). Construido con la medición por delante: cada cambio se prueba contra un conjunto fijo de preguntas antes de integrarse."
+date: 2026-06-16
+featured: true
+order: 0
+tags: ["Python", "RAG", "Hybrid Retrieval", "FastAPI", "Gradio", "Hugging Face", "Evals"]
+githubUrl: "https://github.com/gonzalonao/boe-rag-assistant"
+liveDemoUrl: "https://huggingface.co/spaces/gonzalonao/boe-rag-assistant"
+status: "in-progress"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Qué hace
+
+Haz una pregunta sobre legislación española — *«¿Cuánto tiempo tiene la administración pública para responder a un ciudadano?»* — y el asistente responde en lenguaje claro **y cita el artículo exacto que usó**, con un enlace de vuelta a la fuente oficial en boe.es. Sin respuestas inventadas: si la ley no lo cubre, lo dice en lugar de adivinar.
+
+La fuente es el **BOE** (Boletín Oficial del Estado), el diario oficial de España — un volumen enorme de texto que crece cada día.
+
+## Por qué es diferente
+
+La mayoría de las demos de IA que «responden a partir de documentos» impresionan hasta que las compruebas: suenan seguras pero no pueden demostrar de dónde sale la respuesta, y nadie mide de verdad si aciertan.
+
+Este proyecto hace lo contrario — **medir primero**:
+
+- Un conjunto fijo de preguntas legales reales, cada una con su fuente correcta conocida, existe **antes** de cualquier ajuste.
+- Cada cambio tiene que superar a la versión anterior en ese conjunto, o no se integra — la misma idea que los tests unitarios, pero para la calidad de las respuestas.
+- Cada respuesta apunta al artículo concreto en el que se basa, para que una persona pueda verificarlo en segundos.
+
+## Cómo funciona
+
+<Mermaid code={`flowchart TB
+  A[API BOE Open Data<br/>sumario + XML] --> B[Ingesta<br/>client · parser · chunker]
+  B --> C[Chunks por estructura<br/>uno por artículo]
+  C --> D[(Dataset HF<br/>corpus)]
+  C --> E[(Índice híbrido<br/>dense + BM25)]
+  Q[Consulta] --> F[Recuperación híbrida<br/>RRF]
+  E --> F
+  F --> G[Rerank cross-encoder]
+  G --> H[Generación anclada<br/>citar-o-rechazar]
+  H --> I[Respuesta citada]`} />
+
+1. **Recopilar** los documentos oficiales desde la API de datos abiertos del BOE.
+2. **Trocear** de forma inteligente — una pieza por artículo legal, conservando su lugar en la ley (título → capítulo → artículo) para que cada pieza pueda citarse con precisión.
+3. **Buscar** los pasajes más relevantes para tu pregunta, combinando búsqueda por palabras clave (ideal para referencias exactas como *«artículo 14»*) con búsqueda por significado (ideal para paráfrasis).
+4. **Reverificar** los mejores candidatos con un modelo más cuidadoso que lee juntas la pregunta y cada pasaje, y se queda con los mejores.
+5. **Responder** usando solo esos pasajes, añadiendo las citas — o rechazar si la respuesta no está.
+
+## Resultados hasta ahora
+
+En el conjunto de prueba, la recuperación cuidadosa encuentra el artículo correcto para **todas** las preguntas, y las respuestas generadas se mantienen fieles a las fuentes **~99% de las veces** (rara vez inventan algo). Cada mejora — mejor búsqueda, reordenación más fina — se conservó solo porque los números decían que ayudaba.
+
+> 🔧 **¿Quieres el detalle de ingeniería?** Los números de arriba salen de una completa tubería de evaluación. Lee el análisis técnico en profundidad: [Cómo construí un sistema RAG dirigido por evaluación sobre el derecho español](/es/writing/boe-rag-assistant-deep-dive).
+
+## Diseñado para resistir el mal uso
+
+Un asistente jurídico al que se puede *engañar* para que cite una ley que no existe es peor que no tener asistente. Por eso también se prueba contra personas que intentan romperlo — intentos de hacer que ignore sus reglas, filtre sus instrucciones o invente citas. Una de esas pruebas detectó un problema real: presionado, el modelo citaba una fuente que en realidad nunca había leído. Añadí una comprobación que detecta y elimina esas citas falsas antes de que la respuesta llegue al usuario — cerrando por completo esa debilidad concreta sin afectar a lo demás. El mismo bucle de «medir, encontrar el fallo, corregirlo, demostrarlo» que se usa para la precisión, aplicado a la seguridad.
+
+## Qué viene
+
+- ✅ Recopilar y limpiar el corpus legal
+- ✅ Construir el arnés de medición (los «tests» de la calidad de respuesta)
+- ✅ Mejorar la búsqueda y la reordenación, cada una respaldada por números antes/después
+- ✅ Envolverlo en una API web y una demo de chat sencilla
+- ✅ Publicar una demo pública en vivo (Hugging Face Space)
+- ✅ Probarlo a fondo frente a usuarios hostiles y reforzar los puntos débiles
+- ⏳ Entrenar un modelo de búsqueda jurídico-español afinado para este corpus
+- ⏳ Actualizaciones diarias automáticas según se publican nuevas leyes
+
+## Stack
+
+Python · sentence-transformers (E5 multilingüe) · BM25 en Python puro + fusión RRF · reranker cross-encoder · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — con tipado estricto y tests por todas partes.
