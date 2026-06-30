@@ -54,11 +54,11 @@ El modelo entrenado funciona como sistema de producción demo en Azure + Microso
 
 - Una **Azure Function** reproduce la temporada 2022 como una API de ingesta en vivo, escribiendo particiones horarias (datos reales, programación y un buffer móvil de features de 168 horas) en OneLake.
 - Un **pipeline de Fabric Data Factory** lanza un notebook de inferencia cada hora, que carga el checkpoint campeón y escribe 350 predicciones (70 aeropuertos × 5 horizontes) en tablas Delta.
-- Un dashboard y una API REST de predicciones consumen esas tablas; un pipeline mensual de reentrenamiento campeón/retador en Azure ML está preparado como vía de extensión a producción.
+- Un **panel de Power BI** (DirectLake sobre el Lakehouse de Fabric) y una API REST de predicciones consumen esas tablas; un pipeline mensual de reentrenamiento campeón/retador en Azure ML está preparado como vía de extensión a producción.
 
 ## Stack
 
-PyTorch, PyTorch Geometric, pandas, NumPy, scikit-learn, Open-Meteo, Azure Functions, Microsoft Fabric (OneLake, Data Factory), Delta Lake, pytest.
+PyTorch, PyTorch Geometric, pandas, NumPy, scikit-learn, Open-Meteo, Azure Functions, Microsoft Fabric (OneLake, Data Factory), Delta Lake, Power BI (DirectLake), pytest.
 
 ## Código
 

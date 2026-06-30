@@ -54,11 +54,11 @@ The trained model runs as a demo production system on Azure + Microsoft Fabric:
 
 - An **Azure Function** replays the 2022 season as a live ingestion API, writing hourly partitions (actuals, schedule, and a 168-hour rolling feature buffer) to OneLake.
 - A **Fabric Data Factory pipeline** triggers an inference notebook every hour, loading the champion checkpoint and writing 350 predictions (70 airports × 5 horizons) to Delta tables.
-- A dashboard and a predictions REST API consume those tables; a monthly champion/challenger retraining pipeline on Azure ML is scaffolded as the production-extension path.
+- A **Power BI dashboard** (DirectLake over the Fabric Lakehouse) and a predictions REST API consume those tables; a monthly champion/challenger retraining pipeline on Azure ML is scaffolded as the production-extension path.
 
 ## Stack
 
-PyTorch, PyTorch Geometric, pandas, NumPy, scikit-learn, Open-Meteo, Azure Functions, Microsoft Fabric (OneLake, Data Factory), Delta Lake, pytest.
+PyTorch, PyTorch Geometric, pandas, NumPy, scikit-learn, Open-Meteo, Azure Functions, Microsoft Fabric (OneLake, Data Factory), Delta Lake, Power BI (DirectLake), pytest.
 
 ## Code
 
