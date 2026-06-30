@@ -5,9 +5,9 @@ summary: "Un asistente de IA que responde preguntas sobre la legislación españ
 date: 2026-06-16
 featured: true
 order: 0
-tags: ["Python", "RAG", "Hybrid Retrieval", "FastAPI", "Gradio", "Hugging Face", "Evals"]
+tags: ["Python", "RAG", "Hybrid Retrieval", "FastAPI", "React", "Hugging Face", "Evals"]
 githubUrl: "https://github.com/gonzalonao/boe-rag-assistant"
-liveDemoUrl: "https://huggingface.co/spaces/gonzalonao/boe-rag-assistant"
+liveDemoUrl: "https://gonzalonao.github.io/boe-rag-assistant/"
 status: "in-progress"
 ---
 
@@ -52,6 +52,8 @@ Este proyecto hace lo contrario — **medir primero**:
 
 En el conjunto de prueba, la recuperación cuidadosa encuentra el artículo correcto para **todas** las preguntas, y las respuestas generadas se mantienen fieles a las fuentes **~99% de las veces** (rara vez inventan algo). Cada mejora — mejor búsqueda, reordenación más fina — se conservó solo porque los números decían que ayudaba.
 
+Y no hace falta que te fíes de mi palabra: la demo en vivo incluye una **página de métricas de calidad** que muestra estos números directamente, además de un **modo solo búsqueda** que te deja inspeccionar exactamente qué artículos devuelve el recuperador antes de que se escriba ninguna respuesta.
+
 > 🔧 **¿Quieres el detalle de ingeniería?** Los números de arriba salen de una completa tubería de evaluación. Lee el análisis técnico en profundidad: [Cómo construí un sistema RAG dirigido por evaluación sobre el derecho español](/es/writing/boe-rag-assistant-deep-dive).
 
 ## Diseñado para resistir el mal uso
@@ -63,12 +65,13 @@ Un asistente jurídico al que se puede *engañar* para que cite una ley que no e
 - ✅ Recopilar y limpiar el corpus legal
 - ✅ Construir el arnés de medición (los «tests» de la calidad de respuesta)
 - ✅ Mejorar la búsqueda y la reordenación, cada una respaldada por números antes/después
-- ✅ Envolverlo en una API web y una demo de chat sencilla
-- ✅ Publicar una demo pública en vivo (Hugging Face Space)
+- ✅ Envolverlo en una API web y una aplicación web propia en React
+- ✅ Añadir un modo solo búsqueda y una página de métricas de calidad en vivo a la demo
+- ✅ Publicar una demo pública en vivo (interfaz React propia)
 - ✅ Probarlo a fondo frente a usuarios hostiles y reforzar los puntos débiles
+- ✅ Actualización automática semanal del corpus según se publican nuevas leyes
 - ⏳ Entrenar un modelo de búsqueda jurídico-español afinado para este corpus
-- ⏳ Actualizaciones diarias automáticas según se publican nuevas leyes
 
 ## Stack
 
-Python · sentence-transformers (E5 multilingüe) · BM25 en Python puro + fusión RRF · reranker cross-encoder · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — con tipado estricto y tests por todas partes.
+Python · sentence-transformers (E5 multilingüe) · BM25 en Python puro + fusión RRF · reranker cross-encoder · FastAPI · React + Vite (SPA en TypeScript) · Hugging Face Hub · GitHub Actions — con tipado estricto y tests por todas partes.
