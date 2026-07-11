@@ -5,9 +5,9 @@ summary: "An AI assistant that answers questions about Spanish law and backs eve
 date: 2026-06-16
 featured: true
 order: 0
-tags: ["Python", "RAG", "Hybrid Retrieval", "FastAPI", "Gradio", "Hugging Face", "Evals"]
+tags: ["Python", "RAG", "Hybrid Retrieval", "FastAPI", "React", "Hugging Face", "Evals"]
 githubUrl: "https://github.com/gonzalonao/boe-rag-assistant"
-liveDemoUrl: "https://huggingface.co/spaces/gonzalonao/boe-rag-assistant"
+liveDemoUrl: "https://gonzalonao.github.io/boe-rag-assistant/"
 status: "in-progress"
 ---
 
@@ -52,6 +52,8 @@ This project takes the opposite approach — **measure first**:
 
 On the test set, careful retrieval finds the right article for **every** question, and the generated answers stay faithful to the sources **~99% of the time** (they rarely invent anything). Each improvement — better search, smarter re-ranking — was kept only because the numbers said it helped.
 
+And you don't have to take my word for it: the live demo includes a **quality-metrics page** that shows these scores directly, plus a **search-only mode** that lets you inspect exactly which articles the retriever returns before any answer is written.
+
 > 🔧 **Want the engineering detail?** The numbers above come from a full evaluation pipeline. Read the technical deep-dive: [How I built an eval-driven RAG system over Spanish law](/writing/boe-rag-assistant-deep-dive).
 
 ## Built to resist misuse
@@ -63,12 +65,13 @@ A legal assistant that can be *tricked* into citing a law that doesn't exist is 
 - ✅ Collect and clean the legal corpus
 - ✅ Build the measurement harness (the "tests" for answer quality)
 - ✅ Improve search and re-ranking, each backed by before/after numbers
-- ✅ Wrap it in a web API and a simple chat demo
-- ✅ Ship a public live demo (Hugging Face Space)
+- ✅ Wrap it in a web API and a custom React web app
+- ✅ Add a search-only mode and a live quality-metrics page to the demo
+- ✅ Ship a public live demo (custom React UI)
 - ✅ Stress-test it against hostile users and harden the weak spots
+- ✅ Automatic weekly corpus updates as new laws are published
 - ⏳ Train a Spanish-legal search model tuned for this corpus
-- ⏳ Automatic daily updates as new laws are published
 
 ## Tech stack
 
-Python · sentence-transformers (multilingual E5) · pure-Python BM25 + RRF fusion · cross-encoder reranker · FastAPI · Gradio · Hugging Face Hub · GitHub Actions — with strict typing and tests throughout.
+Python · sentence-transformers (multilingual E5) · pure-Python BM25 + RRF fusion · cross-encoder reranker · FastAPI · React + Vite (TypeScript SPA) · Hugging Face Hub · GitHub Actions — with strict typing and tests throughout.
