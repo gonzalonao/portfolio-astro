@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://portfolio-astro-two-phi.vercel.app/sitemap-index.xml
+Sitemap: https://gonzalonao.vercel.app/sitemap-index.xml

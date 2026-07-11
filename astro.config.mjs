@@ -10,7 +10,7 @@ import rehypeKatex from 'rehype-katex';
 import rehypePrettyCode from 'rehype-pretty-code';
 
 export default defineConfig({
-  site: 'https://portfolio-astro-two-phi.vercel.app',
+  site: 'https://gonzalonao.vercel.app',
   integrations: [
     mdx(),
     tailwind({ applyBaseStyles: false }),
