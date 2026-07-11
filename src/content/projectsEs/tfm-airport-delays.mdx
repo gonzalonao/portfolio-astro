@@ -1,13 +1,12 @@
 ---
 title: "Predicción de Retrasos en Cascada en el Tráfico Aéreo de EE. UU. con GNNs Espacio-Temporales"
 subtitle: "Trabajo Fin de Máster — ESESA"
-summary: "Una red neuronal de grafos espacio-temporal que predice cómo se propagan los retrasos a través de la red de aeropuertos de EE. UU., entrenada sobre más de 70M de registros de vuelos."
+summary: "Una red neuronal de grafos espacio-temporal que predice cómo se propagan los retrasos a través de la red de aeropuertos de EE. UU., desplegada como pipeline de inferencia horaria en Azure y Microsoft Fabric."
 date: 2026-04-01
 featured: true
 order: 3
-tags: ["PyTorch", "PyTorch Geometric", "GNN", "GAT", "LSTM", "Python"]
+tags: ["PyTorch", "PyTorch Geometric", "GNN", "GATv2", "Transformer", "Azure", "Python"]
 githubUrl: "https://github.com/gonzalonao/flight-delay-propagation"
-liveDemoUrl: "https://portfolio-gnn-demo.streamlit.app"
 status: "in-progress"
 ---
 
@@ -15,42 +14,62 @@ import Mermaid from '../../components/Mermaid.astro';
 
 ## El problema
 
-Los retrasos de las aerolíneas se propagan por la red aérea de EE. UU. Predecir qué aeropuertos se verán afectados, y cuándo, es un problema de grafo con estructura tanto espacial (topología de rutas) como temporal (hora del día, meteorología). Un retraso en un único hub un lunes por la mañana puede propagarse a docenas de aeropuertos aguas abajo durante las siguientes 12 horas — y los modelos clásicos de series temporales pierden la topología que dirige esa propagación.
+Los retrasos de las aerolíneas se propagan por la red aérea de EE. UU. Predecir qué aeropuertos se verán afectados, y cuándo, es un problema de grafo con estructura tanto espacial (topología de rutas) como temporal (hora del día, meteorología). Un retraso en un único hub un lunes por la mañana puede propagarse a docenas de aeropuertos aguas abajo durante las horas siguientes — y los modelos clásicos de series temporales pierden la topología que dirige esa propagación.
 
 ## El enfoque
 
-Modelé la red aérea de EE. UU. como un grafo dirigido (nodos = aeropuertos, aristas = rutas). Construí modelos progresivamente desde redes densas y LSTMs, pasando por Graph Convolutional Networks (GCN) y Graph Attention Networks (GAT), culminando en una GNN espacio-temporal que combina capas GNN con LSTM para capturar dependencias tanto estructurales como temporales.
+Modelé la red aérea de EE. UU. como un grafo dirigido sobre los 70 aeropuertos con más tráfico (nodos = aeropuertos, aristas = rutas). Construí modelos progresivamente desde redes densas y LSTMs, pasando por Graph Convolutional Networks (GCN) y Graph Attention Networks (GAT), hasta la arquitectura final: un Transformer espacio-temporal.
+
+- **Encoder espacial** — tres capas GATv2 apiladas con conexiones residuales pre-norm, que consumen features de arista de 5 canales (tráfico programado, retraso reciente de la ruta).
+- **Encoder temporal** — un Transformer de 2 capas con codificación posicional sinusoidal sobre una ventana de 6 horas de snapshots del grafo.
+- **Decoder de consultas por horizonte** — embeddings de consulta aprendibles hacen cross-attention sobre la secuencia temporal de cada aeropuerto, una consulta por horizonte de predicción. Sin autorregresión, así que un fallo temprano no se propaga a los horizontes largos.
 
 <Mermaid code={`flowchart LR
-  A[Vuelos crudos<br/>2018-2022] --> B[Preprocesado]
+  A[Vuelos crudos<br/>2018-2019] --> B[Preprocesado]
   B --> C[Constructor de grafo<br/>nodos = aeropuertos]
   C --> D[Features de nodo<br/>clima, tráfico, hora]
-  D --> E[GNN espacio-temporal<br/>+ LSTM]
-  E --> F[Pronóstico multi-horizonte<br/>de retraso]`} />
+  D --> E[GATv2 espacial +<br/>Transformer temporal]
+  E --> F[Pronóstico multi-horizonte<br/>1h / 2h / 4h / 6h / 8h]`} />
 
-La capa Graph Attention calcula el coeficiente de atención entre el aeropuerto $i$ y su vecino $j$ como:
+La capa GATv2 calcula el coeficiente de atención entre el aeropuerto $i$ y su vecino $j$ como:
 
-$$\alpha_{ij} = \frac{\exp(\text{LeakyReLU}(\vec{a}^T [\mathbf{W}\vec{h}_i \,\|\, \mathbf{W}\vec{h}_j]))}{\sum_{k \in \mathcal{N}_i} \exp(\text{LeakyReLU}(\vec{a}^T [\mathbf{W}\vec{h}_i \,\|\, \mathbf{W}\vec{h}_k]))}$$
+$$\alpha_{ij} = \frac{\exp(\vec{a}^T \text{LeakyReLU}(\mathbf{W} [\vec{h}_i \,\|\, \vec{h}_j]))}{\sum_{k \in \mathcal{N}_i} \exp(\vec{a}^T \text{LeakyReLU}(\mathbf{W} [\vec{h}_i \,\|\, \vec{h}_k]))}$$
 
-Este peso aprendido permite al modelo concentrarse en los aeropuertos aguas arriba más predictivos en lugar de tratar a todos los vecinos por igual — crítico cuando un único hub dirige desproporcionadamente la propagación del retraso.
+A diferencia del GAT original, aplicar el vector de atención *después* de la no linealidad hace que la atención sea dinámica — el ranking de vecinos puede cambiar según el nodo que consulta. Esto importa cuando un único hub dirige desproporcionadamente la propagación del retraso.
 
 ## El pipeline
 
-Procesé el dataset de retrasos de vuelos de EE. UU. 2018–2022 de Kaggle (~70M de registros) a través de un pipeline modular: preprocesado, entrenamiento multi-horizonte y evaluación. Setup reproducible con gestión de hiperparámetros en YAML y tests unitarios.
+Procesé el dataset de retrasos de vuelos de EE. UU. 2018–2022 de Kaggle (~7M de vuelos/año, ~35M en total) a través de un pipeline modular, entrenando sobre 2018–2019 con splits train/val/test estrictamente temporales. Setup reproducible con gestión de hiperparámetros en YAML, caché de snapshots y tests unitarios.
 
-- **Preprocesado**: alineamiento temporal, imputación de valores faltantes, escalado de features, splits train/val/test por fecha.
-- **Construcción del grafo**: rutas dirigidas, features de arista (tráfico histórico), features de nodo (estadísticas móviles de clima + retraso).
-- **Entrenamiento**: regresión multi-horizonte (1h, 3h, 6h, 12h) sobre el retraso medio por aeropuerto, con pérdida enmascarada para aeropuertos de bajo tráfico.
-- **Evaluación**: MAE/RMSE por horizonte, más una métrica de "fidelidad de cascada" que mide la concordancia topológica con la difusión real del retraso.
+- **Preprocesado**: alineamiento temporal, imputación de valores faltantes, escalado de features, splits por fecha.
+- **Construcción del grafo**: snapshots horarios de la red de 70 aeropuertos — aristas de ruta dirigidas con features de tráfico/retraso, y features de nodo que combinan estadísticas móviles de retraso con meteorología real (viento, precipitación, nubosidad) de Open-Meteo.
+- **Entrenamiento**: regresión multi-horizonte (1h, 2h, 4h, 6h, 8h) sobre el retraso medio de llegada por aeropuerto, con una pérdida multi-tarea: Huber ponderada que sobre-pondera las muestras con retraso, una cabeza auxiliar de retraso de salida y una cabeza BCE que clasifica retrasos ≥15 minutos.
+- **Evaluación**: MAE/RMSE/R² por horizonte, más precisión/recall/F1 en el umbral operativo de 15 minutos, con barridos del umbral de decisión para intercambiar precisión por recall.
+
+En el período de test el modelo alcanza **MAE ≈ 10 min, RMSE ≈ 18 min, R² 0.25** de media entre horizontes.
+
+## Despliegue
+
+El modelo entrenado funciona como sistema de producción demo en Azure + Microsoft Fabric:
+
+- Una **Azure Function** reproduce la temporada 2022 como una API de ingesta en vivo, escribiendo particiones horarias (datos reales, programación y un buffer móvil de features de 168 horas) en OneLake.
+- Un **pipeline de Fabric Data Factory** lanza un notebook de inferencia cada hora, que carga el checkpoint campeón y escribe 350 predicciones (70 aeropuertos × 5 horizontes) en tablas Delta.
+- Un **panel de Power BI** (DirectLake sobre el Lakehouse de Fabric) y una API REST de predicciones consumen esas tablas; un pipeline mensual de reentrenamiento campeón/retador en Azure ML está preparado como vía de extensión a producción.
 
 ## Stack
 
-PyTorch, PyTorch Geometric, pandas, numpy, Jupyter Notebooks, YAML.
-
-## Demo en vivo
-
-Hay disponible una demo interactiva del sistema de predicción en Streamlit Cloud: [Probar la demo de la GNN](https://portfolio-gnn-demo.streamlit.app).
+PyTorch, PyTorch Geometric, pandas, NumPy, scikit-learn, Open-Meteo, Azure Functions, Microsoft Fabric (OneLake, Data Factory), Delta Lake, Power BI (DirectLake), pytest.
 
 ## Código
 
-{/* TODO: pegar aquí un fragmento representativo del modelo (capa GAT + bloque espacio-temporal). */}
+El encoder espacial apila capas GATv2 con residuales pre-norm — el flujo residual mantiene los gradientes sanos y contrarresta el over-smoothing de los stacks GNN profundos:
+
+```python
+# Pre-norm residual stack.
+for conv, norm in zip(self.layers, self.norms):
+    h = norm(x)
+    h = conv(h, edge_index, edge_attr=edge_attr)
+    h = F.gelu(h)
+    h = F.dropout(h, p=self.dropout, training=self.training)
+    x = x + h
+```

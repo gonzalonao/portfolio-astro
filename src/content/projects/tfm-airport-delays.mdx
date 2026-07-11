@@ -1,13 +1,12 @@
 ---
 title: "Predicting Cascading Delays in US Air Traffic with Spatio-Temporal GNNs"
 subtitle: "Master's Thesis — ESESA"
-summary: "A spatio-temporal graph neural network that predicts how flight delays cascade through the US airport network, trained on 70M+ flight records."
+summary: "A spatio-temporal graph neural network that predicts how flight delays cascade through the US airport network, deployed as an hourly inference pipeline on Azure and Microsoft Fabric."
 date: 2026-04-01
 featured: true
 order: 3
-tags: ["PyTorch", "PyTorch Geometric", "GNN", "GAT", "LSTM", "Python"]
+tags: ["PyTorch", "PyTorch Geometric", "GNN", "GATv2", "Transformer", "Azure", "Python"]
 githubUrl: "https://github.com/gonzalonao/flight-delay-propagation"
-liveDemoUrl: "https://portfolio-gnn-demo.streamlit.app"
 status: "in-progress"
 ---
 
@@ -15,42 +14,62 @@ import Mermaid from '../../components/Mermaid.astro';
 
 ## The Problem
 
-Airline delays cascade across the US air network. Predicting which airports will be affected, and when, is a graph problem with both spatial (route topology) and temporal (time-of-day, weather) structure. A delay at a single hub on a Monday morning can ripple through dozens of downstream airports over the next 12 hours — and traditional time-series models miss the topology that drives the propagation.
+Airline delays cascade across the US air network. Predicting which airports will be affected, and when, is a graph problem with both spatial (route topology) and temporal (time-of-day, weather) structure. A delay at a single hub on a Monday morning can ripple through dozens of downstream airports over the following hours — and traditional time-series models miss the topology that drives the propagation.
 
 ## The Approach
 
-Modeled the US airport network as a directed graph (nodes = airports, edges = flight routes). Progressively built models from dense networks and LSTMs, through Graph Convolutional Networks (GCN) and Graph Attention Networks (GAT), culminating in a Spatio-Temporal GNN combining GNN layers with LSTM to capture both structural and temporal dependencies.
+Modeled the US airport network as a directed graph over the 70 busiest airports (nodes = airports, edges = flight routes). Progressively built models from dense networks and LSTMs, through Graph Convolutional Networks (GCN) and Graph Attention Networks (GAT), to the final architecture: a spatio-temporal Transformer.
+
+- **Spatial encoder** — three stacked GATv2 layers with pre-norm residual connections, consuming 5-channel edge features (scheduled traffic, recent route delay).
+- **Temporal encoder** — a 2-layer Transformer with sinusoidal positional encoding over a 6-hour window of graph snapshots.
+- **Horizon-query decoder** — learnable query embeddings cross-attend to each airport's temporal sequence, one query per forecast horizon. No autoregression, so an early miss can't cascade into the longer horizons.
 
 <Mermaid code={`flowchart LR
-  A[Raw flights<br/>2018-2022] --> B[Preprocessing]
+  A[Raw flights<br/>2018-2019] --> B[Preprocessing]
   B --> C[Graph builder<br/>nodes = airports]
   C --> D[Node features<br/>weather, traffic, time]
-  D --> E[Spatio-Temporal<br/>GNN + LSTM]
-  E --> F[Multi-horizon<br/>delay forecast]`} />
+  D --> E[GATv2 spatial +<br/>Transformer temporal]
+  E --> F[Multi-horizon forecast<br/>1h / 2h / 4h / 6h / 8h]`} />
 
-The Graph Attention layer computes the attention coefficient between airport $i$ and neighbor $j$ as:
+The GATv2 layer computes the attention coefficient between airport $i$ and neighbor $j$ as:
 
-$$\alpha_{ij} = \frac{\exp(\text{LeakyReLU}(\vec{a}^T [\mathbf{W}\vec{h}_i \,\|\, \mathbf{W}\vec{h}_j]))}{\sum_{k \in \mathcal{N}_i} \exp(\text{LeakyReLU}(\vec{a}^T [\mathbf{W}\vec{h}_i \,\|\, \mathbf{W}\vec{h}_k]))}$$
+$$\alpha_{ij} = \frac{\exp(\vec{a}^T \text{LeakyReLU}(\mathbf{W} [\vec{h}_i \,\|\, \vec{h}_j]))}{\sum_{k \in \mathcal{N}_i} \exp(\vec{a}^T \text{LeakyReLU}(\mathbf{W} [\vec{h}_i \,\|\, \vec{h}_k]))}$$
 
-This learned weighting lets the model focus on the most predictive upstream airports rather than treating all neighbors equally — critical when a single hub disproportionately drives delay propagation.
+Unlike the original GAT, applying the attention vector *after* the non-linearity makes the attention dynamic — the ranking of neighbors can change per query node. That matters when a single hub disproportionately drives delay propagation.
 
 ## The Pipeline
 
-Processed Kaggle's 2018–2022 US flight delay dataset (~70M records) through a modular pipeline: preprocessing, multi-horizon training, model evaluation. Reproducible setup with YAML hyperparameter management and unit tests.
+Processed Kaggle's 2018–2022 US flight delay dataset (~7M flights/year, ~35M total) through a modular pipeline, training on 2018–2019 with strict temporal train/val/test splits. Reproducible setup with YAML hyperparameter management, snapshot caching, and unit tests.
 
-- **Preprocessing**: temporal alignment, missing-value imputation, feature scaling, train/val/test splits by date.
-- **Graph construction**: directed routes, edge features (historical traffic), node features (rolling weather + delay statistics).
-- **Training**: multi-horizon (1h, 3h, 6h, 12h) regression on per-airport mean delay, with masked loss for low-traffic airports.
-- **Evaluation**: MAE/RMSE per horizon, plus a "cascade fidelity" metric measuring topological agreement with ground-truth delay spread.
+- **Preprocessing**: temporal alignment, missing-value imputation, feature scaling, splits by date.
+- **Graph construction**: hourly snapshots of the 70-airport network — directed route edges with traffic/delay features, node features combining rolling delay statistics with live weather (wind, precipitation, cloud cover) from Open-Meteo.
+- **Training**: multi-horizon (1h, 2h, 4h, 6h, 8h) regression on per-airport mean arrival delay, with a multi-task loss: weighted Huber that up-weights delayed samples, an auxiliary departure-delay head, and a BCE head classifying ≥15-minute delays.
+- **Evaluation**: MAE/RMSE/R² per horizon, plus precision/recall/F1 at the 15-minute operational threshold, with decision-threshold sweeps to trade precision for recall.
+
+On the held-out test period the model reaches **MAE ≈ 10 min, RMSE ≈ 18 min, R² 0.25** averaged across horizons.
+
+## Deployment
+
+The trained model runs as a demo production system on Azure + Microsoft Fabric:
+
+- An **Azure Function** replays the 2022 season as a live ingestion API, writing hourly partitions (actuals, schedule, and a 168-hour rolling feature buffer) to OneLake.
+- A **Fabric Data Factory pipeline** triggers an inference notebook every hour, loading the champion checkpoint and writing 350 predictions (70 airports × 5 horizons) to Delta tables.
+- A **Power BI dashboard** (DirectLake over the Fabric Lakehouse) and a predictions REST API consume those tables; a monthly champion/challenger retraining pipeline on Azure ML is scaffolded as the production-extension path.
 
 ## Stack
 
-PyTorch, PyTorch Geometric, pandas, numpy, Jupyter Notebooks, YAML.
-
-## Live Demo
-
-An interactive demo of the prediction system is available on Streamlit Cloud: [Try the GNN demo](https://portfolio-gnn-demo.streamlit.app).
+PyTorch, PyTorch Geometric, pandas, NumPy, scikit-learn, Open-Meteo, Azure Functions, Microsoft Fabric (OneLake, Data Factory), Delta Lake, Power BI (DirectLake), pytest.
 
 ## Code
 
-{/* TODO: paste representative model snippet here (GAT layer + Spatio-Temporal block). */}
+The spatial encoder stacks GATv2 layers with pre-norm residuals — the residual stream keeps gradients healthy and counteracts the over-smoothing of deep GNN stacks:
+
+```python
+# Pre-norm residual stack.
+for conv, norm in zip(self.layers, self.norms):
+    h = norm(x)
+    h = conv(h, edge_index, edge_attr=edge_attr)
+    h = F.gelu(h)
+    h = F.dropout(h, p=self.dropout, training=self.training)
+    x = x + h
+```
