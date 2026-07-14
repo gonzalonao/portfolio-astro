@@ -1,0 +1,75 @@
+---
+title: "Lakehouse Energético en Microsoft Fabric — Con Disciplina de Software"
+subtitle: "Lakehouse medallion sobre datos de la red eléctrica española, con cada item de Fabric versionado y revisado por PR"
+summary: "Un lakehouse batch en Microsoft Fabric que ingesta datos de demanda y generación eléctrica española, construido con la disciplina de un proyecto de software: notebooks revisables como .py, puertas de calidad de datos y CI/CD desde main a producción."
+date: 2026-07-14
+featured: false
+order: 6
+tags: ["Microsoft Fabric", "PySpark", "Delta Lake", "Power BI", "Direct Lake", "Azure DevOps", "CI/CD"]
+githubUrl: "https://github.com/gonzalonao/fabric-energy-lakehouse"
+status: "in-progress"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Visión general
+
+Un **lakehouse medallion en Microsoft Fabric** construido sobre datos públicos de
+electricidad española de [REE](https://www.ree.es) — demanda, mix de generación y precio —
+que aterrizan en crudo en Bronze, se conforman en Silver tras una puerta de calidad de datos
+y se modelan en un esquema en estrella Gold que alimenta un modelo semántico **Direct Lake**
+en Power BI.
+
+Lo interesante no es el patrón medallion. Es que todo se **trata como software**: cada item de
+Fabric vive en Git como definición, los notebooks se revisan como Python plano en pull
+requests, y producción se despliega desde `main` mediante un pipeline — nunca haciendo clic a
+mano en un workspace.
+
+<Mermaid code={`flowchart LR
+  REE[API de REE<br/>demanda · generación · precio] --> PL[Pipeline Data Factory<br/>watermark · idempotente]
+  PL --> B[Bronze<br/>crudo, replayable]
+  B --> S[Silver<br/>tipado · deduplicado · UTC<br/>puerta DQ]
+  S --> G[Gold<br/>esquema en estrella + MLVs]
+  G --> SM[Modelo semántico<br/>Direct Lake]
+  SM --> R[Informe Power BI]`} />
+
+## Los items de Fabric como código
+
+La integración Git de Fabric serializa los items del workspace a disco — y los notebooks
+aterrizan como `.py` plano, no como `.ipynb`. Ese detalle es lo que los hace **revisables**:
+un cambio de una línea en un notebook aparece como un diff de una línea en un pull request,
+en lugar del blob JSON ilegible que resulta cuando un notebook arrastra sus outputs y
+contadores de ejecución.
+
+Así que el flujo de trabajo es el que cualquier ingeniero esperaría:
+
+- El workspace de desarrollo está vinculado a `develop`; los cambios se commitean desde
+  Fabric hacia Git.
+- Las ediciones hechas en el repo se traen *de vuelta* al workspace — el round-trip funciona
+  en ambos sentidos.
+- `develop` → `main` pasa por pull request; `main` despliega al workspace de producción vía
+  `fabric-cicd`. El workspace de producción nunca se vincula a Git ni se edita a mano.
+
+El proyecto se construye deliberadamente **dos veces** — una sincronizando Fabric con **Azure
+DevOps** y otra con **GitHub** — para ejercitar ambos proveedores Git de Fabric y documentar
+sus compromisos.
+
+## Calidad de datos como puerta, no como dashboard
+
+Silver está protegido por una puerta de calidad que **hace fallar la ejecución** en lugar de
+dejar pasar en silencio filas defectuosas aguas abajo: enforcement de esquema y tipos,
+deduplicación por clave de negocio, normalización a UTC y comprobaciones de rango sobre las
+magnitudes físicas. Los registros que fallan se ponen en cuarentena, y un fichero Bronze
+corrompido a propósito forma parte de la batería de pruebas — se espera que el pipeline se
+ponga en rojo, y que el error explique por qué.
+
+{/* WIP — se amplía en la Fase C (narrativa de ingeniería), Fase E (showcase de Power BI)
+     y Fase G (write-up final, grabación de demo, notas de capacidad/coste). */}
+
+## Estado
+
+En progreso. Las bases de plataforma y Git están en su sitio — lakehouse con esquemas
+habilitados, estructura medallion del workspace y un round-trip bidireccional Fabric ↔ Git
+verificado, con un notebook revisado como diff limpio línea a línea en un PR. La ingesta, la
+transformación, el serving y el CI/CD se están construyendo a continuación; esta entrada
+crecerá con la narrativa de arquitectura, el informe y una demo breve.

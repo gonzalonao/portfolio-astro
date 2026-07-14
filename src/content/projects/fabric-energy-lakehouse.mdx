@@ -1,0 +1,69 @@
+---
+title: "Energy Lakehouse on Microsoft Fabric — Engineered Like Software"
+subtitle: "Medallion lakehouse over Spanish grid data, with every Fabric item version-controlled and PR-reviewed"
+summary: "A batch lakehouse on Microsoft Fabric ingesting Spanish electricity demand and generation data, built with the discipline of a software project: notebooks as reviewable .py, data-quality gates, and gated CI/CD from main to production."
+date: 2026-07-14
+featured: false
+order: 6
+tags: ["Microsoft Fabric", "PySpark", "Delta Lake", "Power BI", "Direct Lake", "Azure DevOps", "CI/CD"]
+githubUrl: "https://github.com/gonzalonao/fabric-energy-lakehouse"
+status: "in-progress"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Overview
+
+A **medallion lakehouse on Microsoft Fabric** built over public Spanish electricity data
+from [REE](https://www.ree.es) — demand, generation mix, and price — landing raw in Bronze,
+conformed in Silver behind a data-quality gate, and modeled into a Gold star schema that
+feeds a **Direct Lake** semantic model in Power BI.
+
+The interesting part isn't the medallion pattern. It's that the whole thing is **treated as
+software**: every Fabric item lives in Git as a definition, notebooks are reviewed as plain
+Python in pull requests, and production is deployed from `main` by a pipeline — never by
+hand-clicking in a workspace.
+
+<Mermaid code={`flowchart LR
+  REE[REE API<br/>demand · generation · price] --> PL[Data Factory pipeline<br/>watermarked · idempotent]
+  PL --> B[Bronze<br/>raw, replayable]
+  B --> S[Silver<br/>typed · deduped · UTC<br/>DQ gate]
+  S --> G[Gold<br/>star schema + MLVs]
+  G --> SM[Semantic model<br/>Direct Lake]
+  SM --> R[Power BI report]`} />
+
+## Fabric items as code
+
+Fabric's Git integration serializes workspace items to disk — and notebooks land as plain
+`.py`, not `.ipynb`. That one detail is what makes them **reviewable**: a one-line change to
+a notebook shows up as a one-line diff in a pull request, instead of the unreadable JSON
+blob you get when a notebook carries its outputs and execution counts with it.
+
+So the workflow is the ordinary one any engineer would expect:
+
+- The dev workspace is bound to `develop`; changes are committed from Fabric into Git.
+- Edits made in the repo are pulled *back* into the workspace — the round-trip goes both ways.
+- `develop` → `main` is gated by a pull request; `main` deploys to the production workspace
+  via `fabric-cicd`. The prod workspace is never bound to Git and never hand-edited.
+
+The project is deliberately built **twice** — once syncing Fabric with **Azure DevOps**, once
+with **GitHub** — to exercise both of Fabric's Git providers and document the trade-offs.
+
+## Data quality as a gate, not a dashboard
+
+Silver is protected by a DQ gate that **fails the run** rather than quietly passing bad rows
+downstream: schema and type enforcement, deduplication on business keys, UTC normalization,
+and range checks on the physical quantities. Records that fail are quarantined, and a
+deliberately corrupted Bronze file is part of the test suite — the pipeline is expected to go
+red, and the error is expected to say why.
+
+{/* WIP — expanded at Phase C (engineering narrative), Phase E (Power BI showcase),
+     and Phase G (final write-up, demo recording, capacity/cost notes). */}
+
+## Status
+
+In progress. The platform and Git foundations are in place — schema-enabled lakehouse,
+medallion workspace structure, and a verified bidirectional Fabric ↔ Git round-trip with a
+notebook reviewed as a clean line-level diff in a PR. Ingestion, transformation, serving,
+and CI/CD are being built out next; this entry will grow with the architecture narrative,
+the report, and a short demo.
