@@ -24,7 +24,7 @@ software**: every Fabric item lives in Git as a definition, notebooks are review
 Python in pull requests, and production is deployed from `main` by a pipeline — never by
 hand-clicking in a workspace.
 
-<Mermaid code={`flowchart LR
+<Mermaid code={`flowchart TB
   REE[REE API<br/>demand · generation · price] --> PL[Data Factory pipelines<br/>watermarked · idempotent · scheduled]
   PL --> B[Bronze<br/>raw JSON, replayable]
   B --> S[Silver<br/>typed · deduped · UTC]

@@ -25,7 +25,7 @@ Fabric vive en Git como definición, los notebooks se revisan como Python plano 
 requests, y producción se despliega desde `main` mediante un pipeline — nunca haciendo clic a
 mano en un workspace.
 
-<Mermaid code={`flowchart LR
+<Mermaid code={`flowchart TB
   REE[API de REE<br/>demanda · generación · precio] --> PL[Pipelines Data Factory<br/>watermark · idempotentes · programados]
   PL --> B[Bronze<br/>JSON crudo, replayable]
   B --> S[Silver<br/>tipado · deduplicado · UTC]
