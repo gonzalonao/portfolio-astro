@@ -25,10 +25,13 @@ Python in pull requests, and production is deployed from `main` by a pipeline �
 hand-clicking in a workspace.
 
 <Mermaid code={`flowchart LR
-  REE[REE API<br/>demand · generation · price] --> PL[Data Factory pipeline<br/>watermarked · idempotent]
-  PL --> B[Bronze<br/>raw, replayable]
-  B --> S[Silver<br/>typed · deduped · UTC<br/>DQ gate]
-  S --> G[Gold<br/>star schema + MLVs]
+  REE[REE API<br/>demand · generation · price] --> PL[Data Factory pipelines<br/>watermarked · idempotent · scheduled]
+  PL --> B[Bronze<br/>raw JSON, replayable]
+  B --> S[Silver<br/>typed · deduped · UTC]
+  B -.unparseable records.-> Q[(quarantine)]
+  S --> DQ{DQ gate<br/>write-then-raise}
+  DQ -->|all checks pass| G[Gold<br/>star schema + MLVs]
+  DQ -->|any check fails| X[run fails, loudly]
   G --> SM[Semantic model<br/>Direct Lake]
   SM --> R[Power BI report]`} />
 
@@ -49,21 +52,84 @@ So the workflow is the ordinary one any engineer would expect:
 The project is deliberately built **twice** — once syncing Fabric with **Azure DevOps**, once
 with **GitHub** — to exercise both of Fabric's Git providers and document the trade-offs.
 
+## Ingestion that survives being killed
+
+Three REE series land as raw JSON month-files in Bronze — **43 months × 3 indicators,
+129/129 files byte-verified** after a backfill that fires one polite sequential request at a
+time (the API sits behind a WAF; parallel fetching would be self-sabotage). Two mechanisms
+are deliberately kept separate, because they solve different problems:
+
+- the **watermark** decides *what to fetch* — it makes runs incremental (the full backfill
+  took **3h 53m**; the scheduled daily top-up takes **~4 minutes**);
+- the **deterministic path + whole-file overwrite** decides *what happens when you fetch the
+  same thing twice* — it makes runs idempotent.
+
+That distinction was proven rather than assumed: a backfill was **killed mid-run** and
+re-run with identical parameters — identical file set, zero cleanup logic. The watermark
+never moved (it only advances after success), so it demonstrably wasn't what made the re-run
+safe. And when a designed failure left all three watermarks stamped wrong, the next
+scheduled run **healed them unaided**: wrong bookkeeping plus cheap idempotent re-fetch is a
+self-healing combination.
+
+The backfill also taught a genuine distributed-systems lesson. Three watermark `MERGE`s
+wired in parallel into one unpartitioned Delta table raced: one committed, two threw
+`ConcurrentAppendException` — Delta's unit of conflict is the **table version, not the
+row**. The fix was serializing the three writes. The data was complete and correct the whole
+time, because under this design a failure produces re-fetch pressure, never gaps.
+
 ## Data quality as a gate, not a dashboard
 
-Silver is protected by a DQ gate that **fails the run** rather than quietly passing bad rows
-downstream: schema and type enforcement, deduplication on business keys, UTC normalization,
-and range checks on the physical quantities. Records that fail are quarantined, and a
-deliberately corrupted Bronze file is part of the test suite — the pipeline is expected to go
-red, and the error is expected to say why.
+Bad data has two different shapes, and the pipeline treats them differently:
 
-{/* WIP — expanded at Phase C (engineering narrative), Phase E (Power BI showcase),
-     and Phase G (final write-up, demo recording, capacity/cost notes). */}
+- **Structural** — a record that cannot become a typed row (null value, missing field,
+  a number arriving as a string) is **quarantined** with a machine-readable reason and the
+  original payload; the run continues. Quarantine is append-only: a permanent audit trail.
+- **Semantic** — a record that parses fine but violates physics or policy (negative demand,
+  a wild price) reaches Silver and is judged by the **DQ gate**, which writes *every* check
+  result to an ops table first and only then raises — so the pipeline stops, and the full
+  failure set is diagnosable from a query rather than from one run's stderr.
+
+The gate earned its keep on first contact with real data: it flagged eight negative
+generation values that turned out to be **real** — coal plants consuming more than they
+produce on near-idle days. The fix was a smarter, renewable-aware rule (renewables can never
+be negative; thermal may dip slightly), shipped as a **versioned, unit-tested package
+release** — not a notebook edit.
+
+The corrupted-file drill paid off twice: injecting a deliberately broken Bronze file first
+exposed a **latent reader bug** (the file reader silently depended on Fabric writing
+single-line JSON — an implicit contract nobody had written down), and then, with the reader
+fixed, produced exactly the designed arc: quarantine rows for the garbage, a red run with
+the rule and row count in the error message, and recovery by simply re-running ingestion —
+idempotency as the recovery mechanism.
+
+## A typed package on the cluster, thin notebooks in the workspace
+
+All parsing and DQ logic lives in a versioned Python package (`src/` layout, strict typing,
+ruff, pytest against **real captured API fixtures**), built into a wheel and published to a
+Fabric Environment that every notebook inherits as the workspace default. Notebooks stay
+thin wrappers — the DQ gate notebook is essentially one function call. Changing a DQ
+threshold therefore means: edit tested code, bump the version, republish the environment.
+Slower than editing a cell (~10 minutes), and that's the point — data-quality policy is
+code with tests and history, not a value someone once typed into a notebook.
+
+## A small star, proven from the outside
+
+Gold is a full atomic rebuild — three dimensions, three facts on natural keys, plus two
+**materialized lake views** (monthly renewables share, monthly average price) that the
+engine refreshes declaratively. The layer is verified from the **SQL analytics endpoint**
+(Fabric's read-only T-SQL surface) with committed proof queries: exact row counts, a star
+join reproducing one known month with no fan-out, and the MLV agreeing to the decimal with
+the same aggregate derived independently through the star — March 2024: **65.69%
+renewable**, by both paths.
+
+{/* WIP — expanded at Phase E (Power BI showcase) and Phase G (final write-up, demo
+     recording, capacity/cost notes). */}
 
 ## Status
 
-In progress. The platform and Git foundations are in place — schema-enabled lakehouse,
-medallion workspace structure, and a verified bidirectional Fabric ↔ Git round-trip with a
-notebook reviewed as a clean line-level diff in a PR. Ingestion, transformation, serving,
-and CI/CD are being built out next; this entry will grow with the architecture narrative,
-the report, and a short demo.
+In progress. **Platform, ingestion, and the full medallion transform are built and
+evidenced**: schema-enabled lakehouse with bidirectional Git round-trip, watermarked and
+idempotent ingestion under a daily schedule, Silver behind a tested DQ gate with quarantine,
+and a Gold star schema with materialized lake views proven from the SQL endpoint.
+Orchestration, the Direct Lake report, and gated CI/CD to production are next; this entry
+will grow with the report showcase and a short demo.

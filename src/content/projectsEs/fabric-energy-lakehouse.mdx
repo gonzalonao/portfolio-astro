@@ -26,10 +26,13 @@ requests, y producción se despliega desde `main` mediante un pipeline — nunca
 mano en un workspace.
 
 <Mermaid code={`flowchart LR
-  REE[API de REE<br/>demanda · generación · precio] --> PL[Pipeline Data Factory<br/>watermark · idempotente]
-  PL --> B[Bronze<br/>crudo, replayable]
-  B --> S[Silver<br/>tipado · deduplicado · UTC<br/>puerta DQ]
-  S --> G[Gold<br/>esquema en estrella + MLVs]
+  REE[API de REE<br/>demanda · generación · precio] --> PL[Pipelines Data Factory<br/>watermark · idempotentes · programados]
+  PL --> B[Bronze<br/>JSON crudo, replayable]
+  B --> S[Silver<br/>tipado · deduplicado · UTC]
+  B -.registros imparseables.-> Q[(cuarentena)]
+  S --> DQ{Puerta DQ<br/>escribe y luego lanza}
+  DQ -->|todo pasa| G[Gold<br/>esquema en estrella + MLVs]
+  DQ -->|algo falla| X[la ejecución falla, en voz alta]
   G --> SM[Modelo semántico<br/>Direct Lake]
   SM --> R[Informe Power BI]`} />
 
@@ -54,22 +57,94 @@ El proyecto se construye deliberadamente **dos veces** — una sincronizando Fab
 DevOps** y otra con **GitHub** — para ejercitar ambos proveedores Git de Fabric y documentar
 sus compromisos.
 
+## Una ingesta que sobrevive a que la maten
+
+Tres series de REE aterrizan como ficheros JSON mensuales en Bronze — **43 meses × 3
+indicadores, 129/129 ficheros verificados byte a byte** tras un backfill que lanza una
+petición secuencial y educada cada vez (la API está detrás de un WAF; paralelizar sería
+sabotearse). Dos mecanismos se mantienen deliberadamente separados, porque resuelven
+problemas distintos:
+
+- el **watermark** decide *qué descargar* — hace las ejecuciones incrementales (el backfill
+  completo tardó **3h 53m**; la ejecución diaria programada, **~4 minutos**);
+- la **ruta determinista + sobrescritura del fichero completo** decide *qué pasa si
+  descargas lo mismo dos veces* — hace las ejecuciones idempotentes.
+
+Esa distinción se demostró en vez de asumirse: un backfill fue **cancelado a mitad de
+ejecución** y relanzado con parámetros idénticos — conjunto de ficheros idéntico, cero
+lógica de limpieza. El watermark nunca se movió (solo avanza tras el éxito), así que
+demostrablemente no fue lo que hizo seguro el relanzamiento. Y cuando un fallo diseñado dejó
+los tres watermarks mal estampados, la siguiente ejecución programada **los sanó sola**:
+contabilidad equivocada más re-descarga idempotente barata es una combinación que se
+auto-repara.
+
+El backfill también dejó una lección genuina de sistemas distribuidos. Tres `MERGE` de
+watermark cableados en paralelo contra una tabla Delta sin particionar compitieron: uno
+commiteó, dos lanzaron `ConcurrentAppendException` — la unidad de conflicto de Delta es la
+**versión de la tabla, no la fila**. La solución fue serializar las tres escrituras. Los
+datos estuvieron completos y correctos todo el tiempo, porque con este diseño un fallo
+produce presión de re-descarga, nunca huecos.
+
 ## Calidad de datos como puerta, no como dashboard
 
-Silver está protegido por una puerta de calidad que **hace fallar la ejecución** en lugar de
-dejar pasar en silencio filas defectuosas aguas abajo: enforcement de esquema y tipos,
-deduplicación por clave de negocio, normalización a UTC y comprobaciones de rango sobre las
-magnitudes físicas. Los registros que fallan se ponen en cuarentena, y un fichero Bronze
-corrompido a propósito forma parte de la batería de pruebas — se espera que el pipeline se
-ponga en rojo, y que el error explique por qué.
+Los datos malos tienen dos formas distintas, y el pipeline las trata de forma distinta:
 
-{/* WIP — se amplía en la Fase C (narrativa de ingeniería), Fase E (showcase de Power BI)
-     y Fase G (write-up final, grabación de demo, notas de capacidad/coste). */}
+- **Estructural** — un registro que no puede convertirse en una fila tipada (valor nulo,
+  campo ausente, un número que llega como string) va a **cuarentena** con una razón legible
+  por máquina y el payload original; la ejecución continúa. La cuarentena es append-only:
+  un rastro de auditoría permanente.
+- **Semántica** — un registro que parsea bien pero viola la física o la política (demanda
+  negativa, un precio disparatado) llega a Silver y lo juzga la **puerta DQ**, que primero
+  escribe *todos* los resultados de sus checks en una tabla de operaciones y solo después
+  lanza la excepción — el pipeline se detiene, y el conjunto completo de fallos se
+  diagnostica con una consulta, no desde el stderr de una ejecución.
+
+La puerta se ganó el sueldo en su primer contacto con datos reales: marcó ocho valores
+negativos de generación que resultaron ser **reales** — centrales de carbón que consumen más
+de lo que producen en días casi parados. El arreglo fue una regla más inteligente,
+consciente de las renovables (una renovable nunca puede ser negativa; una térmica puede
+bajar ligeramente), publicado como **release versionada y testeada del paquete** — no como
+edición de un notebook.
+
+El simulacro del fichero corrupto rindió dos veces: inyectar un fichero Bronze roto a
+propósito primero destapó un **bug latente del lector** (el lector dependía en silencio de
+que Fabric escribiera JSON en una sola línea — un contrato implícito que nadie había
+escrito), y después, con el lector arreglado, produjo exactamente el arco diseñado: filas en
+cuarentena para la basura, una ejecución en rojo con la regla y el número de filas en el
+mensaje de error, y recuperación simplemente relanzando la ingesta — la idempotencia como
+mecanismo de recuperación.
+
+## Un paquete tipado en el clúster, notebooks finos en el workspace
+
+Toda la lógica de parseo y calidad vive en un paquete Python versionado (layout `src/`,
+tipado estricto, ruff, pytest contra **fixtures reales capturadas de la API**), compilado en
+una wheel y publicado en un Environment de Fabric que todos los notebooks heredan como
+default del workspace. Los notebooks son envoltorios finos — el de la puerta DQ es en
+esencia una llamada a una función. Cambiar un umbral de calidad significa, por tanto: editar
+código testeado, subir la versión, republicar el environment. Más lento que editar una celda
+(~10 minutos), y esa es la gracia — la política de calidad de datos es código con tests e
+historia, no un valor que alguien tecleó una vez en un notebook.
+
+## Una estrella pequeña, demostrada desde fuera
+
+Gold es una reconstrucción atómica completa — tres dimensiones, tres hechos sobre claves
+naturales, más dos **materialized lake views** (cuota mensual de renovables, precio medio
+mensual) que el motor refresca de forma declarativa. La capa se verifica desde el **SQL
+analytics endpoint** (la superficie T-SQL de solo lectura de Fabric) con consultas de prueba
+commiteadas: recuentos exactos de filas, un join en estrella que reproduce un mes conocido
+sin fan-out, y la MLV coincidiendo al decimal con el mismo agregado derivado
+independientemente a través de la estrella — marzo de 2024: **65,69% renovable**, por ambos
+caminos.
+
+{/* WIP — se amplía en la Fase E (showcase de Power BI) y Fase G (write-up final, grabación
+     de demo, notas de capacidad/coste). */}
 
 ## Estado
 
-En progreso. Las bases de plataforma y Git están en su sitio — lakehouse con esquemas
-habilitados, estructura medallion del workspace y un round-trip bidireccional Fabric ↔ Git
-verificado, con un notebook revisado como diff limpio línea a línea en un PR. La ingesta, la
-transformación, el serving y el CI/CD se están construyendo a continuación; esta entrada
-crecerá con la narrativa de arquitectura, el informe y una demo breve.
+En progreso. **La plataforma, la ingesta y toda la transformación medallion están
+construidas y evidenciadas**: lakehouse con esquemas habilitados y round-trip bidireccional
+con Git, ingesta con watermark e idempotente bajo un schedule diario, Silver tras una puerta
+DQ testeada con cuarentena, y un esquema en estrella Gold con materialized lake views
+demostradas desde el SQL endpoint. La orquestación, el informe Direct Lake y el CI/CD con
+puertas hacia producción vienen a continuación; esta entrada crecerá con el showcase del
+informe y una demo breve.
