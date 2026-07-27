@@ -1,13 +1,13 @@
 ---
 title: "Lakehouse Energético en Microsoft Fabric — Con Disciplina de Software"
 subtitle: "Lakehouse medallion sobre datos de la red eléctrica española, con cada item de Fabric versionado y revisado por PR"
-summary: "Un lakehouse batch en Microsoft Fabric que ingesta datos de demanda y generación eléctrica española, construido con la disciplina de un proyecto de software: notebooks revisables como .py, puertas de calidad de datos y CI/CD desde main a producción."
-date: 2026-07-14
-featured: false
-order: 6
-tags: ["Microsoft Fabric", "PySpark", "Delta Lake", "Power BI", "Direct Lake", "Azure DevOps", "CI/CD"]
+summary: "Un lakehouse batch en Microsoft Fabric que ingesta datos de demanda y generación eléctrica española, construido con la disciplina de un proyecto de software: notebooks revisables como .py, puertas de calidad de datos y CI/CD desde main a un workspace de producción que nadie toca a mano."
+date: 2026-07-27
+featured: true
+order: -1
+tags: ["Microsoft Fabric", "PySpark", "Delta Lake", "Power BI", "Direct Lake", "Azure DevOps", "CI/CD", "Calidad de datos"]
 githubUrl: "https://github.com/gonzalonao/fabric-energy-lakehouse"
-status: "in-progress"
+status: "completed"
 ---
 
 import Mermaid from '../../components/Mermaid.astro';
@@ -24,6 +24,11 @@ Lo interesante no es el patrón medallion. Es que todo se **trata como software*
 Fabric vive en Git como definición, los notebooks se revisan como Python plano en pull
 requests, y producción se despliega desde `main` mediante un pipeline — nunca haciendo clic a
 mano en un workspace.
+
+Publicado como **`v1.0.0`**: 16 definiciones de items desplegadas desde un commit revisado a
+un workspace de producción que nunca se ha editado a mano, que carga su propio histórico y se
+opera solo.
+[**Ver la demo de 90 segundos →**](https://github.com/gonzalonao/fabric-energy-lakehouse/releases/download/v1.0.0/fabric-energy-lakehouse-demo.mp4)
 
 <Mermaid code={`flowchart TB
   REE[API de REE<br/>demanda · generación · precio] --> PL[Pipelines Data Factory<br/>watermark · idempotentes · programados]
@@ -53,9 +58,11 @@ Así que el flujo de trabajo es el que cualquier ingeniero esperaría:
 - `develop` → `main` pasa por pull request; `main` despliega al workspace de producción vía
   `fabric-cicd`. El workspace de producción nunca se vincula a Git ni se edita a mano.
 
-El proyecto se construye deliberadamente **dos veces** — una sincronizando Fabric con **Azure
-DevOps** y otra con **GitHub** — para ejercitar ambos proveedores Git de Fabric y documentar
-sus compromisos.
+Esta ejecución sincroniza Fabric con **Azure DevOps**, y no por preferencia: el tenant sobre el
+que se construyó bloquea por completo el proveedor de GitHub de Fabric. GitHub sigue siendo el
+remoto canónico, y ambos se mantienen sincronizados mediante mirroring — una disciplina
+verificada después de cada commit. Repetir la construcción sobre integración nativa con GitHub
+es la segunda pasada prevista.
 
 ## Una ingesta que sobrevive a que la maten
 
@@ -66,7 +73,7 @@ sabotearse). Dos mecanismos se mantienen deliberadamente separados, porque resue
 problemas distintos:
 
 - el **watermark** decide *qué descargar* — hace las ejecuciones incrementales (el backfill
-  completo tardó **3h 53m**; la ejecución diaria programada, **~4 minutos**);
+  completo tardó **3h 53m**; la ingesta diaria incremental, **menos de 4 minutos**);
 - la **ruta determinista + sobrescritura del fichero completo** decide *qué pasa si
   descargas lo mismo dos veces* — hace las ejecuciones idempotentes.
 
@@ -136,15 +143,139 @@ sin fan-out, y la MLV coincidiendo al decimal con el mismo agregado derivado
 independientemente a través de la estrella — marzo de 2024: **65,69% renovable**, por ambos
 caminos.
 
-{/* WIP — se amplía en la Fase E (showcase de Power BI) y Fase G (write-up final, grabación
-     de demo, notas de capacidad/coste). */}
+## Un solo disparador, y una alerta que nunca habría saltado
+
+Un único pipeline maestro encadena todo el medallion desde un solo schedule diario: ingesta →
+tres notebooks de Silver → puerta DQ → reconstrucción de Gold → vistas materializadas.
+
+El primer diseño de la alerta de fallo estaba mal de una forma que no se habría notado hasta
+que importara. Conectaba siete flechas `On fail` desde siete actividades a una única actividad
+de correo — y en Data Factory, las dependencias procedentes de orígenes *distintos* se
+combinan con **AND**. Las siete actividades habrían tenido que fallar a la vez, algo imposible
+en una cadena que se corta en el primer fallo. **La alerta era silenciosa por construcción**:
+habría superado cualquier prueba que no rompiera algo de verdad.
+
+El diseño corregido canaliza desde la actividad **terminal** con `Failed` **o** `Skipped` (las
+condiciones del *mismo* origen se combinan con OR), de modo que salta exactamente una vez ante
+un fallo en cualquier punto de la cadena. Eso destapó una segunda trampa de inmediato: un
+manejador de errores que *tiene éxito* pone toda la ejecución en verde, así que se añadió una
+actividad `Fail` para reafirmar el estado rojo. Ambos comportamientos se demostraron con una
+rotura controlada: un correo, Gold correctamente omitido, ejecución honestamente roja.
+
+## Direct Lake — y un informe cuyos problemas eran del modelo
+
+La capa de servicio es un modelo semántico curado en **Direct Lake on OneLake**, elegido
+frente a Direct Lake sobre SQL porque lee Delta directamente desde OneLake sin el retardo de
+metadatos del endpoint y, de forma decisiva, **no tiene ninguna ruta de fallback a
+DirectQuery**. "Nada de degradarse en silencio a un modo de consulta lento" se cumple por
+construcción, no por un ajuste.
+
+Esa elección tiene consecuencias que conviene conocer: Direct Lake **no admite columnas
+calculadas**, así que toda columna derivada pertenece aguas arriba en Spark — y la fecha/hora
+automática de Power BI estaba activada en silencio sin interfaz para desactivarla, algo que se
+arregló editando la definición del modelo directamente, posible solo porque el modelo está
+versionado como TMDL.
+
+El primer informe renderizado mostraba un interanual del 40,5% y una tendencia mensual que se
+desplomaba en el extremo derecho. Ambos parecían errores de formato. Ninguno lo era:
+
+- La **medida interanual no tenía opinión sobre si sus dos ventanas eran comparables**, así
+  que comparaba periodos con distinta cantidad de datos cargados. Sustituida por una
+  comparación autocontenida de 12 meses completos móviles, anclada a la última fecha cargada.
+- La **tendencia contaba el mes en curso, incompleto**. Ahora una guarda de completitud deja
+  en blanco cualquier mes cuyo último día natural sea posterior a los datos realmente
+  cargados, y una medida de frescura reporta la fecha de carga *más antigua* de los tres
+  hechos — la más antigua, porque un máximo escondería un indicador rezagado detrás de dos al
+  día.
+
+Arreglarlos en el modelo y no en el informe importa: las medidas viven en Git, así que la
+corrección viaja con la definición en lugar de rehacerse en cada consumidor. **Un informe que
+se ve mal no es automáticamente un problema de formato.**
+
+## Una ruta de release que es código — y dos defectos que solo ejecutarla podía encontrar
+
+Producción se construye exclusivamente con `fabric-cicd` desde `main`, mediante un script de
+despliegue tipado y un fichero de parámetros que reescribe los enlaces de cada entorno. El
+workspace nunca está ligado a Git ni se edita a mano.
+
+La vía del service principal se intentó primero y quedó **bloqueada en el tenant** — el centro
+de administración de Entra devuelve 401 tanto en la hoja como en el enlace de registro de
+aplicaciones, así que el registro era inalcanzable, no denegado. El workflow empresarial se
+incluye igualmente en el repositorio, condicionado por una variable, y producción se despliega
+ejecutando el mismo script con login interactivo: mismo código, mismo commit, distinta
+identidad y disparador. Una vía bloqueada documentada con honestidad vale más que una omitida
+en silencio.
+
+Dos defectos aparecieron solo al *ejecutar* el release, no al revisarlo:
+
+- **Las cachés de bytecode rompieron el primer despliegue.** `fabric-cicd` publica desde el
+  **sistema de ficheros**, no desde git, enviando cada fichero de la carpeta de un item como
+  parte de su definición. Ficheros `__pycache__` ignorados por git — invisibles a
+  `git status`, ausentes del repositorio — se enviaron como partes de notebook y la API
+  rechazó cuatro de siete. *"No está en git" no significa "no se desplegará".*
+- **El modelo semántico conservó en silencio su enlace de desarrollo.** Direct Lake on OneLake
+  guarda su origen como una expresión Power Query con una URL literal de OneLake, a la que el
+  reapuntado automático de la herramienta no llega — reapunta referencias *estructuradas* a
+  items, no identificadores incrustados en cargas de texto libre. **Producción renderizaba los
+  datos de desarrollo con aspecto perfectamente sano**, hasta que se leyó el enlace en sí.
+
+El segundo merece generalizarse. Toda verificación que había pasado — items presentes, enlaces
+de notebooks correctos, destino del pipeline correcto, informe que renderiza — es una
+comprobación que solo puede fallar **en voz alta**. Ninguna podía detectar un destino
+equivocado pero válido. **El rigor de una verificación no se mide por cuántas comprobaciones
+pasan, sino por si alguna podía haber fallado por el motivo que realmente importa.**
+
+### Producción resultó operarse sola
+
+La mañana siguiente al despliegue, el pipeline diario se ejecutó **solo, a las 08:00**, sin
+supervisión y sin que nadie hubiera configurado un disparador. Fabric serializa el schedule de
+un pipeline en Git como parte de la definición del item, así que producción heredó un schedule
+activo desde `main`. El despliegue había reproducido el *comportamiento operativo*, no solo el
+grafo de items — algo posible únicamente cuando un entorno se construye desde control de
+versiones en lugar de a golpe de clic.
+
+## Lo que cuesta
+
+Fabric factura el cómputo en **CU-segundos**, y suaviza las operaciones de fondo en una
+ventana de **24 horas** (las interactivas, en 5 minutos) — así que un trabajo batch pesado
+nunca aparece como un pico de utilización, y una gráfica plana durante un backfill de 3 horas
+es la lectura correcta, no un fallo de medición.
+
+Medido a partir de las duraciones reales: el backfill en producción tardó **3h 09m**, la
+cadena diaria **~18 minutos**, y el desglose por actividad muestra que la ingesta es el **43%
+del tiempo de reloj pero casi nada del cómputo** — está limitada por red, esperando a una API
+con límite de peticiones. La duración no es el coste. Los consumidores reales son la puerta DQ
+y la reconstrucción de Gold, cortas pero genuinamente intensivas en Spark. A esta cadencia,
+toda la carga cabe holgadamente en una **F2**, la capacidad de pago más pequeña, usando un
+pequeño porcentaje de su presupuesto diario. La capacidad de prueba sobre la que se construyó
+es de 64 CU — unas treinta veces más de lo que la carga necesita, que es lo que la prueba
+*concede*, no lo que el trabajo *requiere*.
+
+## Qué viene después
+
+- **Real-Time Intelligence.** Una contraparte en streaming de esta plataforma batch —
+  Eventstream hacia un Eventhouse, analítica KQL sobre datos de red en vivo y Activator para
+  alertas dirigidas por eventos — extendiendo el mismo lakehouse en lugar de vivir al lado.
+- **La misma construcción sobre un segundo proveedor Git.** Esto se construyó sincronizando
+  Fabric con **Azure DevOps**, porque el tenant bloqueaba el proveedor de GitHub por completo.
+  Repetirlo sobre integración nativa con **GitHub**, en un tenant sin esas restricciones,
+  ejercita la vía CI/CD con service principal que aquí era inalcanzable y permite contrastar
+  ambos proveedores de forma directa en vez de descrita.
+- **Una pasada de acabado del informe** en Power BI Desktop — el modelo está completo y es
+  correcto; los visuales aún merecen una ronda de formato.
 
 ## Estado
 
-En progreso. **La plataforma, la ingesta y toda la transformación medallion están
-construidas y evidenciadas**: lakehouse con esquemas habilitados y round-trip bidireccional
-con Git, ingesta con watermark e idempotente bajo un schedule diario, Silver tras una puerta
-DQ testeada con cuarentena, y un esquema en estrella Gold con materialized lake views
-demostradas desde el SQL endpoint. La orquestación, el informe Direct Lake y el CI/CD con
-puertas hacia producción vienen a continuación; esta entrada crecerá con el showcase del
-informe y una demo breve.
+**Publicado — `v1.0.0`, desplegado en producción y verificado de extremo a extremo.** Todo el
+medallion se ejecuta desde un único disparador diario: ingesta idempotente con watermark,
+Silver tras una puerta de calidad de datos testeada con cuarentena, un esquema en estrella
+Gold con materialized lake views demostradas de forma independiente desde el SQL endpoint, y
+un modelo semántico Direct Lake con 11 medidas DAX tras un informe de tres páginas. Producción
+cargó su propio histórico ejecutando sus propios pipelines desplegados, y funciona sin
+supervisión.
+
+El repositorio conserva la evidencia duradera: 16 definiciones de items como código, un
+paquete tipado con 26 tests sobre respuestas reales capturadas de la API, tres scripts SQL de
+prueba, 51 capturas catalogadas repartidas en seis fases, un registro de decisiones con sus
+alternativas descartadas, y un diario de construcción de qué se rompió y a qué obligó cada
+fallo.
