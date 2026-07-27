@@ -1,0 +1,259 @@
+---
+title: "Energy Lakehouse on Microsoft Fabric — Engineered Like Software"
+subtitle: "Medallion lakehouse over Spanish grid data, with every Fabric item version-controlled and PR-reviewed"
+summary: "A batch lakehouse on Microsoft Fabric ingesting Spanish electricity demand and generation data, built with the discipline of a software project: notebooks as reviewable .py, data-quality gates, and gated CI/CD from main to a production workspace nobody touches by hand."
+date: 2026-07-27
+featured: true
+order: -1
+tags: ["Microsoft Fabric", "PySpark", "Delta Lake", "Power BI", "Direct Lake", "Azure DevOps", "CI/CD", "Data Quality"]
+githubUrl: "https://github.com/gonzalonao/fabric-energy-lakehouse"
+status: "completed"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Overview
+
+A **medallion lakehouse on Microsoft Fabric** built over public Spanish electricity data
+from [REE](https://www.ree.es) — demand, generation mix, and price — landing raw in Bronze,
+conformed in Silver behind a data-quality gate, and modeled into a Gold star schema that
+feeds a **Direct Lake** semantic model in Power BI.
+
+The interesting part isn't the medallion pattern. It's that the whole thing is **treated as
+software**: every Fabric item lives in Git as a definition, notebooks are reviewed as plain
+Python in pull requests, and production is deployed from `main` by a pipeline — never by
+hand-clicking in a workspace.
+
+Shipped as **`v1.0.0`**: 16 item definitions deployed from a reviewed commit into a
+production workspace that has never been hand-edited, loading its own history and running
+itself.
+[**Watch the 90-second demo →**](https://github.com/gonzalonao/fabric-energy-lakehouse/releases/download/v1.0.0/fabric-energy-lakehouse-demo.mp4)
+
+<Mermaid code={`flowchart TB
+  REE[REE API<br/>demand · generation · price] --> PL[Data Factory pipelines<br/>watermarked · idempotent · scheduled]
+  PL --> B[Bronze<br/>raw JSON, replayable]
+  B --> S[Silver<br/>typed · deduped · UTC]
+  B -.unparseable records.-> Q[(quarantine)]
+  S --> DQ{DQ gate<br/>write-then-raise}
+  DQ -->|all checks pass| G[Gold<br/>star schema + MLVs]
+  DQ -->|any check fails| X[run fails, loudly]
+  G --> SM[Semantic model<br/>Direct Lake]
+  SM --> R[Power BI report]`} />
+
+## Fabric items as code
+
+Fabric's Git integration serializes workspace items to disk — and notebooks land as plain
+`.py`, not `.ipynb`. That one detail is what makes them **reviewable**: a one-line change to
+a notebook shows up as a one-line diff in a pull request, instead of the unreadable JSON
+blob you get when a notebook carries its outputs and execution counts with it.
+
+So the workflow is the ordinary one any engineer would expect:
+
+- The dev workspace is bound to `develop`; changes are committed from Fabric into Git.
+- Edits made in the repo are pulled *back* into the workspace — the round-trip goes both ways.
+- `develop` → `main` is gated by a pull request; `main` deploys to the production workspace
+  via `fabric-cicd`. The prod workspace is never bound to Git and never hand-edited.
+
+This run syncs Fabric with **Azure DevOps**, and not by preference: the tenant it was built on
+blocks Fabric's GitHub provider outright. GitHub stays the canonical remote, with both kept in
+lockstep by mirroring — a discipline verified after every commit. Repeating the build on
+native GitHub integration is the planned second pass.
+
+## Ingestion that survives being killed
+
+Three REE series land as raw JSON month-files in Bronze — **43 months × 3 indicators,
+129/129 files byte-verified** after a backfill that fires one polite sequential request at a
+time (the API sits behind a WAF; parallel fetching would be self-sabotage). Two mechanisms
+are deliberately kept separate, because they solve different problems:
+
+- the **watermark** decides *what to fetch* — it makes runs incremental (the full backfill
+  took **3h 53m**; the daily ingestion top-up takes **under 4 minutes**);
+- the **deterministic path + whole-file overwrite** decides *what happens when you fetch the
+  same thing twice* — it makes runs idempotent.
+
+That distinction was proven rather than assumed: a backfill was **killed mid-run** and
+re-run with identical parameters — identical file set, zero cleanup logic. The watermark
+never moved (it only advances after success), so it demonstrably wasn't what made the re-run
+safe. And when a designed failure left all three watermarks stamped wrong, the next
+scheduled run **healed them unaided**: wrong bookkeeping plus cheap idempotent re-fetch is a
+self-healing combination.
+
+The backfill also taught a genuine distributed-systems lesson. Three watermark `MERGE`s
+wired in parallel into one unpartitioned Delta table raced: one committed, two threw
+`ConcurrentAppendException` — Delta's unit of conflict is the **table version, not the
+row**. The fix was serializing the three writes. The data was complete and correct the whole
+time, because under this design a failure produces re-fetch pressure, never gaps.
+
+## Data quality as a gate, not a dashboard
+
+Bad data has two different shapes, and the pipeline treats them differently:
+
+- **Structural** — a record that cannot become a typed row (null value, missing field,
+  a number arriving as a string) is **quarantined** with a machine-readable reason and the
+  original payload; the run continues. Quarantine is append-only: a permanent audit trail.
+- **Semantic** — a record that parses fine but violates physics or policy (negative demand,
+  a wild price) reaches Silver and is judged by the **DQ gate**, which writes *every* check
+  result to an ops table first and only then raises — so the pipeline stops, and the full
+  failure set is diagnosable from a query rather than from one run's stderr.
+
+The gate earned its keep on first contact with real data: it flagged eight negative
+generation values that turned out to be **real** — coal plants consuming more than they
+produce on near-idle days. The fix was a smarter, renewable-aware rule (renewables can never
+be negative; thermal may dip slightly), shipped as a **versioned, unit-tested package
+release** — not a notebook edit.
+
+The corrupted-file drill paid off twice: injecting a deliberately broken Bronze file first
+exposed a **latent reader bug** (the file reader silently depended on Fabric writing
+single-line JSON — an implicit contract nobody had written down), and then, with the reader
+fixed, produced exactly the designed arc: quarantine rows for the garbage, a red run with
+the rule and row count in the error message, and recovery by simply re-running ingestion —
+idempotency as the recovery mechanism.
+
+## A typed package on the cluster, thin notebooks in the workspace
+
+All parsing and DQ logic lives in a versioned Python package (`src/` layout, strict typing,
+ruff, pytest against **real captured API fixtures**), built into a wheel and published to a
+Fabric Environment that every notebook inherits as the workspace default. Notebooks stay
+thin wrappers — the DQ gate notebook is essentially one function call. Changing a DQ
+threshold therefore means: edit tested code, bump the version, republish the environment.
+Slower than editing a cell (~10 minutes), and that's the point — data-quality policy is
+code with tests and history, not a value someone once typed into a notebook.
+
+## A small star, proven from the outside
+
+Gold is a full atomic rebuild — three dimensions, three facts on natural keys, plus two
+**materialized lake views** (monthly renewables share, monthly average price) that the
+engine refreshes declaratively. The layer is verified from the **SQL analytics endpoint**
+(Fabric's read-only T-SQL surface) with committed proof queries: exact row counts, a star
+join reproducing one known month with no fan-out, and the MLV agreeing to the decimal with
+the same aggregate derived independently through the star — March 2024: **65.69%
+renewable**, by both paths.
+
+## One trigger, and an alert that could never have fired
+
+A single master pipeline chains the whole medallion off one daily schedule: ingest → three
+Silver notebooks → DQ gate → Gold rebuild → materialized views.
+
+The first failure-alert design was wrong in a way that would never have shown up until it
+mattered. It wired seven `On fail` arrows from seven activities into one email activity —
+and in Data Factory, dependencies from *different* sources are **AND**-ed. All seven
+activities would have had to fail simultaneously, which is impossible in a chain that
+short-circuits on the first failure. **The alert was silent by construction**: it would have
+passed every test that didn't actually break something.
+
+The corrected design funnels off the **terminal** activity on `Failed` **or** `Skipped`
+(conditions from the *same* source are OR-ed), so it fires exactly once for a failure
+anywhere in the chain. That exposed a second trap immediately — a failure handler that
+*succeeds* flips the whole run green, so a `Fail` activity was added to re-assert the red
+status. Both behaviours were then proven with a controlled break: one email, Gold correctly
+skipped, run honestly red.
+
+## Direct Lake — and a report whose problems were model problems
+
+Serving is a curated semantic model in **Direct Lake on OneLake**, chosen over Direct Lake
+on SQL because it reads Delta straight from OneLake with no endpoint metadata lag and,
+decisively, **has no DirectQuery fallback path at all**. "No silent downgrade to a slow
+query mode" is satisfied by construction rather than by a setting.
+
+That choice has consequences worth knowing: Direct Lake supports **no calculated columns**,
+so every derived column belongs upstream in Spark — and Power BI's auto date/time was
+silently enabled with no interface to switch it off, fixed by editing the model definition
+directly, which is only possible because the model is source-controlled as TMDL.
+
+The first rendered report showed a year-on-year figure of 40.5% and a monthly trend that
+dived at the right-hand edge. Both looked like formatting bugs. Neither was:
+
+- The **year-on-year measure had no opinion on whether its two windows were comparable**, so
+  it compared periods holding different amounts of loaded data. Replaced with a
+  self-contained rolling-12-complete-months comparison anchored to the last loaded date.
+- The **trend counted the current, partial month**. A completeness guard now blanks any month
+  whose last calendar day is later than the data actually loaded, and a freshness measure
+  reports the *earliest* last-loaded date across all three facts — earliest, because a
+  maximum would hide one lagging indicator behind two current ones.
+
+Fixing them in the model rather than the report mattered: measures live in Git, so the fix
+travels with the definition instead of being redone in every consumer. **A report that looks
+wrong is not automatically a formatting problem.**
+
+## A release path that is code — and two defects only running it could find
+
+Production is built exclusively by `fabric-cicd` from `main`, driven by a typed deploy
+script and a parameter file that rewrites per-environment bindings. The workspace is never
+Git-bound and never hand-edited.
+
+The service-principal path was attempted first and **blocked at the tenant** — the Entra
+admin centre returns 401 on both the blade and the app-registration link, so registration was
+unreachable rather than denied. The enterprise workflow ships in the repo anyway, gated
+behind a repository variable, and production deploys by running the same script with an
+interactive login: same code, same commit, different identity and trigger. A blocked path
+documented honestly is worth more than one quietly omitted.
+
+Two defects surfaced only by *running* the release, not by reviewing it:
+
+- **Bytecode caches broke the first deploy.** `fabric-cicd` publishes from the **filesystem**,
+  not from git, posting every file in an item's folder as a definition part. Gitignored
+  `__pycache__` files — invisible to `git status`, absent from the repo — shipped as notebook
+  parts and the API rejected four of seven notebooks. *"Not in git" does not mean "won't
+  deploy."*
+- **The semantic model silently kept its development binding.** Direct Lake on OneLake stores
+  its source as a Power Query expression holding a literal OneLake URL, which the deploy
+  tool's automatic re-pointing cannot reach into — it re-points *structured* item references,
+  not identifiers embedded in free-text payloads. **Production rendered development's data,
+  looking perfectly healthy**, until the binding itself was read.
+
+The second is the one worth generalising. Every verification that had passed — all items
+present, notebook bindings correct, pipeline sink correct, report renders — is a check that
+can only fail **loudly**. None could detect a wrong-but-valid target. **Verification
+thoroughness isn't how many checks pass; it's whether any of them could have failed for the
+reason that actually matters.**
+
+### Production turned out to be self-operating
+
+The morning after the deploy, the daily pipeline ran **on its own at 08:00**, unattended,
+with nobody having configured a trigger. Fabric serialises a pipeline's schedule into Git as
+part of the item definition, so production inherited an active schedule from `main`.
+Deployment had reproduced the *operational behaviour*, not just the item graph — something
+only possible when an environment is built from source control rather than clicked together.
+
+## What it costs
+
+Fabric bills compute in **CU-seconds**, and smooths background operations over a **24-hour**
+window (interactive work over 5 minutes) — so a heavy batch job never appears as a
+utilisation spike, and a flat chart during a 3-hour backfill is the correct reading rather
+than a measurement failure.
+
+Measured from run durations: the production backfill took **3h 09m**, the daily chain **~18
+minutes**, and the per-activity split shows ingestion is **43% of the wall clock but almost
+none of the compute** — it is network-bound, waiting on a rate-limited API. Duration is not
+cost. The real consumers are the DQ gate and the Gold rebuild, which are short but genuinely
+Spark-heavy. At this cadence the whole workload fits comfortably on an **F2**, the smallest
+paid capacity, using a few percent of its daily budget. The trial capacity it was built on is
+64 CU — roughly thirty times more than the workload needs, which is what the trial *grants*,
+not what the workload *requires*.
+
+## What's next
+
+- **Real-Time Intelligence.** A streaming counterpart to this batch platform — Eventstream
+  into an Eventhouse, KQL analytics over live grid data, and Activator for event-driven
+  alerting — extending the same lakehouse rather than standing beside it.
+- **The same build on a second Git provider.** This was built syncing Fabric with **Azure
+  DevOps**, because the tenant blocked the GitHub provider outright. Repeating it on native
+  **GitHub** integration, on a tenant without those restrictions, exercises the
+  service-principal CI/CD path that was unreachable here and lets the two providers be
+  contrasted directly rather than described.
+- **A report polish pass** in Power BI Desktop — the model is complete and correct; the
+  visuals still deserve a formatting round.
+
+## Status
+
+**Shipped — `v1.0.0`, deployed to production and verified end to end.** The full medallion
+runs on one daily trigger: watermarked idempotent ingestion, Silver behind a tested
+data-quality gate with quarantine, a Gold star schema with materialized lake views proven
+independently from the SQL endpoint, and a Direct Lake semantic model with 11 DAX measures
+behind a three-page report. Production loaded its own history by running its own deployed
+pipelines, and operates unattended.
+
+The repository carries the durable evidence: 16 item definitions as code, a typed package
+with 26 tests over real captured API responses, three SQL proof scripts, 51 catalogued
+screenshots across six phases, a decision log with rejected alternatives, and a build log of
+what broke and what each failure forced.
