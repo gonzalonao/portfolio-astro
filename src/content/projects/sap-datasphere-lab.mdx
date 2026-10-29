@@ -1,0 +1,135 @@
+---
+title: "SAP Datasphere Lab — Every Ingestion Path, Measured"
+subtitle: "An end-to-end SAP Datasphere build on Northwind, from source systems to Power BI, documented phase by phase"
+summary: "An SAP Datasphere project built in a real tenant: every ingestion path the platform offers, from federation to delta replication, measured for cost and freshness and reconciled to the cent against an independent calculation. Modelling, row-level security, orchestration and Power BI follow in later phases."
+date: 2026-10-29
+featured: false
+order: 6
+tags: ["SAP Datasphere", "SAP HANA Cloud", "Replication Flows", "Delta Capture", "Azure SQL", "Python", "SQL", "Data Integration"]
+githubUrl: "https://github.com/gonzalonao/sap-datasphere-lab"
+status: "in-progress"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Overview
+
+A hands-on **SAP Datasphere** project built in a real tenant, around one scenario
+(Northwind Traders) that every phase extends: sources and ingestion first, then modelling,
+the semantic layer and row-level security, orchestration, and consumption in SAP Analytics
+Cloud and **Power BI**.
+
+It's written for the stack I work in day to day: ERP sources, Azure Data Factory,
+Databricks and Power BI. Datasphere concepts are mapped to their Microsoft or Databricks
+counterparts, and the choices the platform offers are **measured rather than described**.
+
+Two phases are done:
+
+- **Foundation:** an own space, a first star schema by association, an analytic model and a
+  live SAC story.
+- **Ingestion & integration:** every ingestion path Datasphere offers, built and measured.
+
+Every load reconciles against the same reference totals: Quantity **51,317**, revenue
+**1,265,792.64**.
+
+<Mermaid code={`flowchart TB
+  AZ[(Azure SQL Database<br/>Northwind, delta source)] -->|trigger-based delta| RF[Replication flow<br/>8 tables]
+  AZ -->|DP Agent| RT[Remote table<br/>remote · snapshot · real-time]
+  OD[Northwind OData] --> RT2[Remote table<br/>daily snapshot]
+  S4[S/4HANA sandbox API] --> RT3[Remote table<br/>federated]
+  RF --> LT[Local tables<br/>delta capture]
+  LT --> TF[Transformation flow<br/>watermark]
+  TF --> SALES[Order lines<br/>with revenue]
+  AZ --> DF[Data flow<br/>Python operator]
+  PY[Python loader] -->|hdbcli| OSQL[Open SQL schema<br/>sales targets]
+  SALES --> V[Views and analytic model]
+  OSQL --> V
+  V --> BI[SAC · Power BI]`} />
+
+## Every ingestion path, measured
+
+Datasphere can federate a source, snapshot it, keep it in sync in real time, replicate it
+with delta, transform it inside HANA, run Python over it, or let an external client write
+straight into the database. The documentation lists the options. The useful question is what
+each one *costs*, so each was built against the same Azure SQL source and measured:
+
+| Path | Measured here | Use it when |
+| ---- | ------------- | ----------- |
+| Remote table, federated | Every query hits the source; `WHERE` and `COUNT` pushed down to SQL Server, about 0.65 s per statement. Over OData, no aggregation pushdown at all | Small or rarely read data, or data that mustn't be copied |
+| Remote table, snapshot | 830 rows in 7 s; a failed refresh keeps the old replica; a daily schedule ran unattended | Read-heavy data that changes slowly |
+| Remote table, real-time | Changes visible in seconds; with the agent down they queued at the source and arrived after the restart | Low latency, at the price of triggers on every source write |
+| Replication flow | Initial load of 8 tables in about 3 minutes, then **1 to 2 minutes per delta run, even for one changed row** | Bulk and delta loads; SAP's default path |
+| Transformation flow | 2,155 lines in 6 s inside HANA; a changed line → exactly 1 record processed | Turning delta tables into modelled tables |
+| Data flow | 9 rows took between 1 min 45 s and 2 min 40 s, every run a full reload | Python logic, or sources a replication flow can't read |
+
+The pattern that falls out is **frequency, not volume, drives cost**. Replication and data
+flows run on a separate integration runtime with a fixed start-up cost, so an hourly
+one-row delta costs almost as much as a full load. A transformation flow runs as SQL in the
+space's own database and barely registers.
+
+## The cent that took three tries
+
+Revenue is computed once, in the transformation flow, and then has to match the reference
+total from the CSV files. It didn't, twice:
+
+- **1,265,789.88.** The source stores `Discount` as `real`, and HANA evaluated the whole
+  expression in single precision.
+- **1,265,796.29.** Converting the discount with `TO_DECIMAL` fixed the precision, but
+  HANA's `TO_DECIMAL` **truncates**, and the eight odd discounts in the data are stored just
+  below their value as floats.
+- **1,265,792.64.** Converting to six decimals and *then* rounding gave the exact discount
+  and the exact total.
+
+SQL Server's own check had shown the right number all along, because its `CAST` rounds.
+**The same expression gives a different answer in another engine.** Only an
+engine-independent recalculation from the CSV reproduced each wrong total to the cent, which
+is what turned a guess into an explanation.
+
+## Delta that can silently miss a change
+
+The transformation flow joins order lines (its delta source) to order headers. The delta
+tests confirmed what the documentation implies but doesn't warn about: a change that only
+touches the **header** table is invisible. The flow processed zero records, reported
+success, and at one point left a single order with two different customers. Only resetting
+the watermark repaired it.
+
+It's the classic incremental-join blind spot, the same one as a dbt incremental model
+filtered on one table's `updated_at`. It shaped the design: keep header attributes out of
+the flow and join them in a view, or give them a delta source of their own.
+
+## Small findings that only running it could give
+
+- **Real-time replication needs a permission the docs don't list.** SAP's trigger-based
+  capture also creates a database-level DDL trigger, which needs `ALTER ANY DATABASE DDL
+  TRIGGER` on SQL Server.
+- **A connection's features follow its type, not its data.** S/4HANA data reached over a
+  generic OData connection gets remote tables and data flows, but no replication flows.
+- **Network direction matters.** Replication and data flows leave SAP's network and need its
+  egress IPs in the source firewall. Agents and SQL clients come *in* and need the tenant's
+  IP allowlist.
+- **Idempotent isn't atomic.** The Python loader for the Open SQL schema reran cleanly, but
+  `hdbcli` autocommits by default, so a crash between its delete and its insert would have
+  left the table empty. One explicit transaction fixes it.
+- **A blocked path, documented.** Outbound replication to Azure Data Lake for Databricks
+  needs premium outbound capacity that this tenant can't allocate. The design and its cost
+  model are in the decision log instead, and Databricks will read through the Open SQL
+  schema.
+
+## What's next
+
+- **Modelling:** layered SQL and graphical views; dimensions, text entities and every
+  association type; hierarchies; view persistence measured before and after.
+- **Semantic layer and security:** calculated and restricted measures, variables, and
+  row-level data access controls proven with two identities.
+- **Orchestration:** one task chain over replication, transformation and data flows.
+- **Power BI over Datasphere,** reconciled to the same totals and the same row-level
+  security as SAC.
+- **SAP Business Data Cloud:** data products and zero-copy sharing to Databricks, where the
+  tenant allows it.
+
+## Status
+
+**In progress. Phases A (foundation) and B (ingestion) are complete.** The repository holds
+a measured decision table for every ingestion path, a decision log with rejected
+alternatives, a build log of what broke and why, a data dictionary, the SQL and Python
+scripts, and catalogued screenshots from the tenant.
