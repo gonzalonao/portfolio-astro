@@ -112,8 +112,7 @@ These are stubs that should be replaced before going public:
 - `azure-pipeline.mdx` — replace the dashed iframe placeholder with the Power BI Publish-to-Web embed.
 - **Live demo URLs** — Streamlit (`portfolio-gnn-demo.streamlit.app`) and HuggingFace (`huggingface.co/spaces/gonzalonao/portfolio-rag`) are placeholders. Confirm or update once the demos are live.
 - **Steam toolkit repo visibility** — the flagship project links to `https://github.com/gonzalonao/steam-market-toolkit`. If that repo is still private, either make it public or remove the `githubUrl` field from `steam-market-portfolio.mdx` until it goes public.
-- `astro.config.mjs` — `site: 'https://gonzalolopezcrespo.com'` is a placeholder; change it to your actual deployed URL (it's used for canonical links and the sitemap).
-- `public/robots.txt` — sitemap URL also points at the placeholder domain; update together.
+- `astro.config.mjs` + `public/robots.txt` — `site` and the sitemap URL point at the Vercel production URL. If a custom domain is connected later, update both together (they drive canonical links, hreflang, og:url, and the sitemap).
 
 ## License
 
