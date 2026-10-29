@@ -1,0 +1,136 @@
+---
+title: "SAP Datasphere Lab — Cada Vía de Ingesta, Medida"
+subtitle: "Un proyecto SAP Datasphere de extremo a extremo sobre Northwind, de los sistemas origen a Power BI, documentado por fases"
+summary: "Un proyecto SAP Datasphere construido en un tenant real: cada vía de ingesta que ofrece la plataforma, de la federación a la replicación con delta, medida en coste y frescura y conciliada al céntimo contra un cálculo independiente. El modelado, la seguridad a nivel de fila, la orquestación y Power BI llegan en las fases siguientes."
+date: 2026-10-29
+featured: false
+order: 6
+tags: ["SAP Datasphere", "SAP HANA Cloud", "Replication Flows", "Delta Capture", "Azure SQL", "Python", "SQL", "Integración de datos"]
+githubUrl: "https://github.com/gonzalonao/sap-datasphere-lab"
+status: "in-progress"
+---
+
+import Mermaid from '../../components/Mermaid.astro';
+
+## Visión general
+
+Un proyecto práctico de **SAP Datasphere** construido en un tenant real, alrededor de un único
+escenario (Northwind Traders) que cada fase amplía: primero orígenes e ingesta, después
+modelado, capa semántica y seguridad a nivel de fila, orquestación, y consumo en SAP Analytics
+Cloud y **Power BI**.
+
+Está pensado para el stack con el que trabajo a diario: orígenes ERP, Azure Data Factory,
+Databricks y Power BI. Los conceptos de Datasphere se relacionan con sus equivalentes en
+Microsoft o Databricks, y las opciones que ofrece la plataforma se **miden en lugar de
+describirse**.
+
+Hay dos fases terminadas:
+
+- **Fundamentos:** un space propio, un primer esquema en estrella por asociación, un modelo
+  analítico y una story de SAC en vivo.
+- **Ingesta e integración:** cada vía de ingesta que ofrece Datasphere, construida y medida.
+
+Cada carga se concilia contra los mismos totales de referencia: cantidad **51.317**, ingresos
+**1.265.792,64**.
+
+<Mermaid code={`flowchart TB
+  AZ[(Azure SQL Database<br/>Northwind, origen con delta)] -->|delta por triggers| RF[Replication flow<br/>8 tablas]
+  AZ -->|DP Agent| RT[Remote table<br/>remota · snapshot · tiempo real]
+  OD[OData de Northwind] --> RT2[Remote table<br/>snapshot diario]
+  S4[API sandbox S/4HANA] --> RT3[Remote table<br/>federada]
+  RF --> LT[Tablas locales<br/>delta capture]
+  LT --> TF[Transformation flow<br/>watermark]
+  TF --> SALES[Líneas de pedido<br/>con ingresos]
+  AZ --> DF[Data flow<br/>operador Python]
+  PY[Cargador Python] -->|hdbcli| OSQL[Esquema Open SQL<br/>objetivos de venta]
+  SALES --> V[Vistas y modelo analítico]
+  OSQL --> V
+  V --> BI[SAC · Power BI]`} />
+
+## Cada vía de ingesta, medida
+
+Datasphere puede federar un origen, hacer un snapshot, mantenerlo sincronizado en tiempo real,
+replicarlo con delta, transformarlo dentro de HANA, ejecutar Python sobre él, o dejar que un
+cliente externo escriba directamente en la base de datos. La documentación enumera las
+opciones. La pregunta útil es cuánto *cuesta* cada una, así que se construyeron todas contra el
+mismo origen Azure SQL y se midieron:
+
+| Vía | Medido aquí | Úsala cuando |
+| --- | ----------- | ------------ |
+| Remote table, federada | Cada consulta va al origen; `WHERE` y `COUNT` se delegan a SQL Server, unos 0,65 s por sentencia. Sobre OData, ninguna agregación se delega | Datos pequeños o poco leídos, o que no deben copiarse |
+| Remote table, snapshot | 830 filas en 7 s; un refresco fallido conserva la réplica anterior; una programación diaria corrió sin intervención | Datos muy leídos que cambian despacio |
+| Remote table, tiempo real | Cambios visibles en segundos; con el agente caído se encolaron en el origen y llegaron tras el reinicio | Baja latencia, al precio de triggers en cada escritura del origen |
+| Replication flow | Carga inicial de 8 tablas en unos 3 minutos, y luego **1 a 2 minutos por ejecución delta, incluso con una sola fila cambiada** | Cargas masivas y delta; la vía por defecto de SAP |
+| Transformation flow | 2.155 líneas en 6 s dentro de HANA; una línea cambiada → exactamente 1 registro procesado | Convertir tablas delta en tablas modeladas |
+| Data flow | 9 filas tardaron entre 1 min 45 s y 2 min 40 s, cada ejecución una recarga completa | Lógica Python, u orígenes que un replication flow no puede leer |
+
+El patrón que sale es que **el coste lo marca la frecuencia, no el volumen**. Los replication
+flows y data flows corren en un runtime de integración aparte con un coste fijo de arranque,
+así que un delta horario de una fila cuesta casi lo mismo que una carga completa. Un
+transformation flow corre como SQL en la propia base de datos del space y apenas se nota.
+
+## El céntimo que costó tres intentos
+
+Los ingresos se calculan una sola vez, en el transformation flow, y luego tienen que coincidir
+con el total de referencia de los CSV. No coincidieron, dos veces:
+
+- **1.265.789,88.** El origen guarda `Discount` como `real`, y HANA evaluó toda la expresión en
+  precisión simple.
+- **1.265.796,29.** Convertir el descuento con `TO_DECIMAL` arregló la precisión, pero el
+  `TO_DECIMAL` de HANA **trunca**, y los ocho descuentos raros de los datos están guardados como
+  float justo por debajo de su valor.
+- **1.265.792,64.** Convertir a seis decimales y *después* redondear dio el descuento exacto y el
+  total exacto.
+
+La propia comprobación de SQL Server mostraba el número correcto desde el principio, porque su
+`CAST` redondea. **La misma expresión da otra respuesta en otro motor.** Solo un recálculo
+independiente del motor, desde el CSV, reprodujo cada total erróneo al céntimo, y eso es lo que
+convirtió una sospecha en una explicación.
+
+## Un delta que puede perderse un cambio en silencio
+
+El transformation flow une las líneas de pedido (su origen delta) con las cabeceras. Las pruebas
+de delta confirmaron lo que la documentación da a entender pero no advierte: un cambio que solo
+toca la tabla de **cabeceras** es invisible. El flow procesó cero registros, informó de éxito, y
+en un momento dejó un mismo pedido con dos clientes distintos. Solo reiniciar el watermark lo
+arregló.
+
+Es el clásico punto ciego de los joins incrementales, el mismo que el de un modelo incremental
+de dbt filtrado por el `updated_at` de una sola tabla. Y condicionó el diseño: sacar los
+atributos de cabecera del flow y unirlos en una vista, o darles un origen delta propio.
+
+## Hallazgos pequeños que solo da ejecutarlo
+
+- **La replicación en tiempo real necesita un permiso que la documentación no lista.** La
+  captura por triggers de SAP crea además un trigger DDL a nivel de base de datos, que en SQL
+  Server requiere `ALTER ANY DATABASE DDL TRIGGER`.
+- **Las funciones de una conexión siguen a su tipo, no a sus datos.** Datos de S/4HANA leídos por
+  una conexión OData genérica tienen remote tables y data flows, pero no replication flows.
+- **La dirección de red importa.** Los replication flows y data flows salen de la red de SAP y
+  necesitan sus IP de salida en el firewall del origen. Los agentes y clientes SQL *entran* y
+  necesitan la lista de IP permitidas del tenant.
+- **Idempotente no es atómico.** El cargador Python del esquema Open SQL se relanzaba sin
+  problemas, pero `hdbcli` hace autocommit por defecto, así que un fallo entre su delete y su
+  insert habría dejado la tabla vacía. Una transacción explícita lo resuelve.
+- **Una vía bloqueada, documentada.** La replicación de salida a Azure Data Lake para Databricks
+  necesita capacidad de salida premium que este tenant no puede asignar. El diseño y su modelo de
+  costes están en el registro de decisiones, y Databricks leerá a través del esquema Open SQL.
+
+## Próximos pasos
+
+- **Modelado:** vistas SQL y gráficas por capas; dimensiones, entidades de texto y todos los
+  tipos de asociación; jerarquías; persistencia de vistas medida antes y después.
+- **Capa semántica y seguridad:** medidas calculadas y restringidas, variables, y controles de
+  acceso a nivel de fila probados con dos identidades.
+- **Orquestación:** una task chain sobre replication, transformation y data flows.
+- **Power BI sobre Datasphere,** conciliado con los mismos totales y la misma seguridad a nivel
+  de fila que SAC.
+- **SAP Business Data Cloud:** data products y compartición zero-copy hacia Databricks, si el
+  tenant lo permite.
+
+## Estado
+
+**En curso. Las fases A (fundamentos) y B (ingesta) están terminadas.** El repositorio contiene
+una tabla de decisión medida para cada vía de ingesta, un registro de decisiones con las
+alternativas descartadas, un build log de qué falló y por qué, un diccionario de datos, los
+scripts SQL y Python, y capturas catalogadas del tenant.
